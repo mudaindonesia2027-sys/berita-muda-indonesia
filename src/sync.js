@@ -4,49 +4,114 @@ import Parser from 'rss-parser';
 import { supabase } from './supabase.js';
 
 const parser = new Parser({
-  timeout: 15000,
+  timeout: Number(process.env.RSS_TIMEOUT_MS || 6500),
   headers: {
-    'User-Agent': 'BeritaMudaIndonesia/7.0'
+    'User-Agent': 'BeritaMudaIndonesia/5.2 (+news aggregator)'
   }
 });
 
-/* =========================================================
-   RSS FEEDS
-========================================================= */
+const splitFeeds = value =>
+  String(value || '')
+    .split(',')
+    .map(item => item.trim())
+    .filter(Boolean);
 
-const feeds = (process.env.RSS_FEEDS || '')
-  .split(',')
-  .map(item => item.trim())
-  .filter(Boolean);
+const articleFeeds = splitFeeds(process.env.RSS_FEEDS);
+const videoFeeds = splitFeeds(process.env.VIDEO_RSS_FEEDS);
 
+const feedEntries = [
+  ...articleFeeds.map(url => ({
+    url,
+    type: 'article'
+  })),
+  ...videoFeeds.map(url => ({
+    url,
+    type: 'video'
+  }))
+];
 
-/* =========================================================
-   UTILITIES
-========================================================= */
+const FEED_CONCURRENCY = Math.max(
+  1,
+  Math.min(
+    6,
+    Number(process.env.RSS_CONCURRENCY || 4)
+  )
+);
 
-function stripHtml(value = '') {
-  return String(value)
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
+const MAX_ITEMS_PER_FEED = Math.max(
+  1,
+  Math.min(
+    60,
+    Number(process.env.RSS_MAX_ITEMS || 30)
+  )
+);
+
+const MAX_RUNTIME_MS = Math.max(
+  10000,
+  Math.min(
+    55000,
+    Number(
+      process.env.RSS_MAX_RUNTIME_MS || 45000
+    )
+  )
+);
+
+const RETRIES = Math.max(
+  0,
+  Math.min(
+    2,
+    Number(process.env.RSS_RETRIES || 1)
+  )
+);
+
+const sleep = ms =>
+  new Promise(resolve =>
+    setTimeout(resolve, ms)
+  );
+
+const stripHtml = (value = '') =>
+  String(value)
+    .replace(
+      /<script[\s\S]*?<\/script>/gi,
+      ' '
+    )
+    .replace(
+      /<style[\s\S]*?<\/style>/gi,
+      ' '
+    )
+    .replace(
+      /<[^>]+>/g,
+      ' '
+    )
+    .replace(
+      /\s+/g,
+      ' '
+    )
     .trim();
-}
 
-
-function safeHtml(value = '') {
-  return String(value)
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
-    .replace(/javascript:/gi, '')
+const safeHtmlFromFeed = (value = '') =>
+  String(value)
+    .replace(
+      /<script[\s\S]*?<\/script>/gi,
+      ''
+    )
+    .replace(
+      /<style[\s\S]*?<\/style>/gi,
+      ''
+    )
+    .replace(
+      /\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi,
+      ''
+    )
+    .replace(
+      /javascript:/gi,
+      ''
+    )
     .trim();
-}
 
-
-function normalizeUrl(value = '') {
+const canonicalUrl = (raw = '') => {
   try {
-    const url = new URL(value);
+    const url = new URL(raw);
 
     url.hash = '';
 
@@ -58,686 +123,1079 @@ function normalizeUrl(value = '') {
       'utm_content',
       'fbclid',
       'gclid'
-    ].forEach(key => {
-      url.searchParams.delete(key);
-    });
+    ].forEach(key =>
+      url.searchParams.delete(key)
+    );
+
+    for (
+      const key of [
+        ...url.searchParams.keys()
+      ]
+    ) {
+      if (
+        key
+          .toLowerCase()
+          .startsWith('utm_')
+      ) {
+        url.searchParams.delete(key);
+      }
+    }
+
+    url.hostname =
+      url.hostname.toLowerCase();
+
+    if (
+      url.pathname !== '/'
+    ) {
+      url.pathname =
+        url.pathname.replace(
+          /\/+$/,
+          ''
+        );
+    }
 
     return url.toString();
 
   } catch {
-    return String(value).trim();
+    return String(raw || '').trim();
   }
-}
+};
 
+const normalizeTitle = (value = '') =>
+  stripHtml(value)
+    .toLowerCase()
+    .replace(
+      /[^\p{L}\p{N}\s]/gu,
+      ' '
+    )
+    .replace(
+      /\s+/g,
+      ' '
+    )
+    .trim();
 
-function createFingerprint(title = '', summary = '') {
-  return crypto
+const fingerprintOf = ({
+  title,
+  summary,
+  source
+}) =>
+  crypto
     .createHash('sha256')
-    .update(`${title}|${summary}`.toLowerCase())
+    .update(
+      `${normalizeTitle(title)}|${stripHtml(
+        summary
+      ).slice(
+        0,
+        500
+      )}|${String(
+        source || ''
+      ).toLowerCase()}`
+    )
     .digest('hex');
-}
 
+const eventKeyOf = ({
+  title,
+  category
+}) =>
+  crypto
+    .createHash('sha256')
+    .update(
+      `${normalizeTitle(title)
+        .split(' ')
+        .slice(
+          0,
+          14
+        )
+        .join(' ')}|${category || ''}`
+    )
+    .digest('hex')
+    .slice(
+      0,
+      32
+    );
 
-/* =========================================================
-   CATEGORY DETECTION
-========================================================= */
+const categoryFor = (
+  url,
+  title = ''
+) => {
+  const text =
+    `${url || ''} ${title || ''}`
+      .toLowerCase();
 
-function detectCategory(url = '', title = '') {
+  const categories = {
+    politik: 'POLITIK',
+    hukum: 'HUKUM',
+    ekonomi: 'EKONOMI',
+    teknologi: 'TEKNOLOGI',
+    olahraga: 'OLAHRAGA',
+    sport: 'OLAHRAGA',
+    dunia: 'INTERNASIONAL',
+    internasional: 'INTERNASIONAL',
+    hiburan: 'HIBURAN',
+    entertainment: 'HIBURAN',
+    lifestyle: 'LIFESTYLE',
+    gaya: 'LIFESTYLE'
+  };
 
-  const text = `${url} ${title}`.toLowerCase();
-
-  const rules = [
-    ['politik', 'POLITIK'],
-    ['pemerintahan', 'POLITIK'],
-    ['presiden', 'POLITIK'],
-    ['ekonomi', 'EKONOMI'],
-    ['bisnis', 'EKONOMI'],
-    ['keuangan', 'EKONOMI'],
-    ['teknologi', 'TEKNOLOGI'],
-    ['digital', 'TEKNOLOGI'],
-    ['tekno', 'TEKNOLOGI'],
-    ['olahraga', 'OLAHRAGA'],
-    ['sepakbola', 'OLAHRAGA'],
-    ['bola', 'OLAHRAGA'],
-    ['internasional', 'INTERNASIONAL'],
-    ['dunia', 'INTERNASIONAL'],
-    ['hiburan', 'HIBURAN'],
-    ['entertainment', 'HIBURAN'],
-    ['lifestyle', 'LIFESTYLE'],
-    ['kesehatan', 'KESEHATAN'],
-    ['pendidikan', 'PENDIDIKAN'],
-    ['hukum', 'HUKUM'],
-    ['kriminal', 'HUKUM'],
-    ['otomotif', 'OTOMOTIF'],
-    ['lingkungan', 'LINGKUNGAN']
-  ];
-
-  for (const [keyword, category] of rules) {
-    if (text.includes(keyword)) {
+  for (
+    const [
+      keyword,
+      category
+    ] of Object.entries(
+      categories
+    )
+  ) {
+    if (
+      text.includes(keyword)
+    ) {
       return category;
     }
   }
 
   return 'NASIONAL';
-}
+};
 
-
-/* =========================================================
-   AUTHOR
-========================================================= */
-
-function getAuthor(item) {
-
-  const author =
+const authorOf = item =>
+  String(
     item.creator ||
     item.author ||
     item['dc:creator'] ||
     item['dc:Creator'] ||
-    null;
-
-  if (!author) return null;
-
-  return String(author)
+    ''
+  )
     .trim()
-    .slice(0, 160);
-}
+    .slice(
+      0,
+      160
+    ) || null;
 
+const imageOf = item => {
+  const mediaContent =
+    item['media:content'];
 
-/* =========================================================
-   IMAGE
-========================================================= */
+  const mediaThumbnail =
+    item['media:thumbnail'];
 
-function getImage(item) {
+  const enclosureType =
+    String(
+      item.enclosure?.type || ''
+    ).toLowerCase();
 
-  if (item.enclosure?.url) {
-    const type = String(item.enclosure.type || '');
+  const enclosureImage =
+    enclosureType.startsWith(
+      'image/'
+    )
+      ? item.enclosure?.url
+      : null;
 
-    if (type.startsWith('image/')) {
-      return item.enclosure.url;
+  return (
+    (
+      Array.isArray(
+        mediaThumbnail
+      )
+        ? mediaThumbnail[0]?.url
+        : mediaThumbnail?.url
+    ) ||
+    item.itunes?.image ||
+    item.image ||
+    enclosureImage ||
+    (
+      Array.isArray(
+        mediaContent
+      )
+        ? mediaContent[0]?.url
+        : mediaContent?.url
+    ) ||
+    null
+  );
+};
+
+const videoUrlOf = item => {
+  const enclosureUrl =
+    item.enclosure?.url;
+
+  const enclosureType =
+    String(
+      item.enclosure?.type || ''
+    ).toLowerCase();
+
+  const mediaContent =
+    item['media:content'];
+
+  const mediaUrl =
+    Array.isArray(
+      mediaContent
+    )
+      ? mediaContent[0]?.url
+      : mediaContent?.url;
+
+  if (
+    enclosureUrl &&
+    enclosureType.startsWith(
+      'video/'
+    )
+  ) {
+    return enclosureUrl;
+  }
+
+  if (
+    mediaUrl
+  ) {
+    return mediaUrl;
+  }
+
+  return (
+    item.link ||
+    enclosureUrl ||
+    null
+  );
+};
+
+const looksLikeVideo = item => {
+  const url =
+    String(
+      videoUrlOf(item) || ''
+    ).toLowerCase();
+
+  const enclosureType =
+    String(
+      item.enclosure?.type || ''
+    ).toLowerCase();
+
+  return (
+    enclosureType.startsWith(
+      'video/'
+    ) ||
+    /youtube\.com|youtu\.be|vimeo\.com|dailymotion\.com|\.mp4(?:\?|$)|\.webm(?:\?|$)|\.m3u8(?:\?|$)/.test(
+      url
+    )
+  );
+};
+
+async function fetchFeed(
+  url
+) {
+  let lastError;
+
+  for (
+    let attempt = 0;
+    attempt <= RETRIES;
+    attempt += 1
+  ) {
+    const startedAt =
+      Date.now();
+
+    try {
+      const feed =
+        await parser.parseURL(
+          url
+        );
+
+      return {
+        feed,
+        latency:
+          Date.now() -
+          startedAt
+      };
+
+    } catch (
+      error
+    ) {
+      lastError =
+        error;
+
+      if (
+        attempt <
+        RETRIES
+      ) {
+        await sleep(
+          350 *
+          (
+            attempt + 1
+          )
+        );
+      }
     }
   }
 
-  if (item['media:content']?.url) {
-    return item['media:content'].url;
-  }
-
-  if (item['media:thumbnail']?.url) {
-    return item['media:thumbnail'].url;
-  }
-
-  if (item.itunes?.image) {
-    return item.itunes.image;
-  }
-
-  return null;
+  throw lastError;
 }
 
+async function mapWithConcurrency(
+  items,
+  limit,
+  worker
+) {
+  const results = [];
 
-/* =========================================================
-   VIDEO DETECTION
-========================================================= */
+  let nextIndex = 0;
 
-function isVideoFeed(feedUrl = '') {
+  const workers =
+    Array.from(
+      {
+        length:
+          Math.min(
+            limit,
+            items.length
+          )
+      },
+      async () => {
+        while (
+          true
+        ) {
+          const index =
+            nextIndex;
 
-  const url = feedUrl.toLowerCase();
+          nextIndex += 1;
 
-  return (
-    url.includes('/video') ||
-    url.includes('/videos') ||
-    url.includes('youtube') ||
-    url.includes('video.xml')
+          if (
+            index >=
+            items.length
+          ) {
+            return;
+          }
+
+          results[index] =
+            await worker(
+              items[index],
+              index
+            );
+        }
+      }
+    );
+
+  await Promise.all(
+    workers
   );
+
+  return results;
 }
 
-
-function isVideoItem(item = {}) {
-
-  const enclosureType =
-    String(item.enclosure?.type || '').toLowerCase();
-
-  const link =
-    String(item.link || '').toLowerCase();
-
-  const guid =
-    String(item.guid || '').toLowerCase();
-
-  return (
-    enclosureType.startsWith('video/') ||
-    link.includes('/video') ||
-    guid.includes('/video') ||
-    Boolean(item.itunes)
-  );
-}
-
-
-function getVideoUrl(item) {
-
-  if (
-    item.enclosure?.url &&
-    String(item.enclosure?.type || '')
-      .toLowerCase()
-      .startsWith('video/')
-  ) {
-    return item.enclosure.url;
-  }
-
-  if (item.link) {
-    return item.link;
-  }
-
-  if (item.guid) {
-    return item.guid;
-  }
-
-  return null;
-}
-
-
-/* =========================================================
-   ARTICLE SYNC
-========================================================= */
-
-async function saveArticle({
+function articleRowFromItem(
   item,
+  feedUrl,
   source
-}) {
-
-  const originalUrl =
-    item.link ||
-    item.guid;
-
-  if (!originalUrl) {
-    return {
-      saved: false,
-      reason: 'no_url'
-    };
-  }
-
-  const url =
-    normalizeUrl(originalUrl);
-
-  const title =
-    stripHtml(item.title || '')
-      .slice(0, 500);
-
-  if (!title) {
-    return {
-      saved: false,
-      reason: 'no_title'
-    };
-  }
-
+) {
   const rawHtml =
     item['content:encoded'] ||
     item.content ||
     '';
 
-  const html =
-    safeHtml(rawHtml);
-
-  const text =
+  const plain =
     stripHtml(
-      rawHtml ||
       item.contentSnippet ||
+      rawHtml ||
       item.summary ||
       item.description ||
       ''
     );
 
-  const summary =
-    (
-      text ||
-      stripHtml(
-        item.summary ||
-        item.description ||
-        ''
-      )
+  const contentHtml =
+    safeHtmlFromFeed(
+      rawHtml
+    );
+
+  const url =
+    canonicalUrl(
+      item.link ||
+      item.guid ||
+      ''
+    );
+
+  const title =
+    String(
+      item.title || ''
     )
-      .slice(0, 1000);
+      .trim()
+      .slice(
+        0,
+        500
+      );
 
-  const wordCount =
-    text
-      .split(/\s+/)
-      .filter(Boolean)
-      .length;
+  const category =
+    categoryFor(
+      feedUrl,
+      title
+    );
 
-  const payload = {
+  if (
+    !title ||
+    !url
+  ) {
+    return null;
+  }
 
+  return {
     title,
 
-    summary,
-
-    content:
-      text || null,
+    summary:
+      plain.slice(
+        0,
+        600
+      ),
 
     content_html:
-      html.length >= 80
-        ? html.slice(0, 50000)
+      contentHtml.length >=
+      80
+        ? contentHtml.slice(
+            0,
+            50000
+          )
         : null,
 
     url,
 
-    source_url:
+    canonical_url:
       url,
 
-    canonical_url:
+    content_fingerprint:
+      fingerprintOf({
+        title,
+        summary:
+          plain,
+        source
+      }),
+
+    source_url:
       url,
 
     source,
 
     author_name:
-      getAuthor(item),
+      authorOf(
+        item
+      ),
 
-    category:
-      detectCategory(url, title),
+    category,
+
+    event_key:
+      eventKeyOf({
+        title,
+        category
+      }),
+
+    editorial_status:
+      'auto',
 
     image_url:
-      getImage(item),
+      imageOf(
+        item
+      ),
 
     published_at:
       item.isoDate ||
       item.pubDate ||
-      new Date().toISOString(),
-
-    status:
-      'published',
+      new Date()
+        .toISOString(),
 
     content_source:
-      html.length >= 80
+      contentHtml.length >=
+      80
         ? 'rss'
         : 'snippet',
 
     content_available:
-      Boolean(text || html),
+      contentHtml.length >=
+      80,
 
-    content_fingerprint:
-      createFingerprint(title, summary),
-
-    reading_minutes:
-      Math.max(
-        1,
-        Math.ceil(wordCount / 220)
-      ),
-
-    updated_at:
-      new Date().toISOString()
-  };
-
-  const { error } =
-    await supabase
-      .from('articles')
-      .upsert(
-        payload,
-        {
-          onConflict: 'url'
-        }
-      );
-
-  if (error) {
-    throw error;
-  }
-
-  return {
-    saved: true
+    status:
+      'published'
   };
 }
 
-
-/* =========================================================
-   VIDEO SYNC
-========================================================= */
-
-async function saveVideo({
+function videoRowFromItem(
   item,
+  feedUrl,
   source
-}) {
-
+) {
   const videoUrl =
-    getVideoUrl(item);
-
-  if (!videoUrl) {
-    return {
-      saved: false,
-      reason: 'no_video_url'
-    };
-  }
+    canonicalUrl(
+      videoUrlOf(item) ||
+      ''
+    );
 
   const title =
-    stripHtml(item.title || '')
-      .slice(0, 500);
+    String(
+      item.title || ''
+    )
+      .trim()
+      .slice(
+        0,
+        500
+      );
 
-  if (!title) {
-    return {
-      saved: false,
-      reason: 'no_title'
-    };
+  if (
+    !title ||
+    !videoUrl
+  ) {
+    return null;
   }
 
   const description =
     stripHtml(
-      item['content:encoded'] ||
-      item.content ||
       item.contentSnippet ||
       item.summary ||
       item.description ||
+      item.content ||
       ''
-    )
-      .slice(0, 5000);
+    ).slice(
+      0,
+      5000
+    );
 
-  const payload = {
-
+  return {
     title,
 
     description:
-      description || null,
+      description ||
+      null,
 
     video_url:
-      normalizeUrl(videoUrl),
+      videoUrl,
 
     thumbnail_url:
-      getImage(item),
+      imageOf(
+        item
+      ),
 
     source,
 
     category:
-      detectCategory(
-        videoUrl,
+      categoryFor(
+        feedUrl,
         title
       ),
 
     status:
-      'published',
-
-    updated_at:
-      new Date().toISOString()
-  };
-
-  /*
-    videos tidak terlihat memiliki
-    UNIQUE constraint pada video_url.
-
-    Karena itu cek dulu sebelum insert.
-  */
-
-  const { data: existing, error: checkError } =
-    await supabase
-      .from('videos')
-      .select('id')
-      .eq(
-        'video_url',
-        payload.video_url
-      )
-      .limit(1);
-
-  if (checkError) {
-    throw checkError;
-  }
-
-  if (
-    existing &&
-    existing.length > 0
-  ) {
-
-    const { error } =
-      await supabase
-        .from('videos')
-        .update(payload)
-        .eq(
-          'id',
-          existing[0].id
-        );
-
-    if (error) {
-      throw error;
-    }
-
-  } else {
-
-    const { error } =
-      await supabase
-        .from('videos')
-        .insert(payload);
-
-    if (error) {
-      throw error;
-    }
-
-  }
-
-  return {
-    saved: true
+      'published'
   };
 }
 
+async function saveArticles(
+  rows
+) {
+  if (
+    !rows.length
+  ) {
+    return 0;
+  }
 
-/* =========================================================
-   MAIN SYNC
-========================================================= */
+  const uniqueRows =
+    [
+      ...new Map(
+        rows.map(
+          row => [
+            row.url,
+            row
+          ]
+        )
+      ).values()
+    ];
+
+  const {
+    error
+  } =
+    await supabase
+      .from(
+        'articles'
+      )
+      .upsert(
+        uniqueRows,
+        {
+          onConflict:
+            'url',
+
+          ignoreDuplicates:
+            false
+        }
+      );
+
+  if (
+    error
+  ) {
+    throw error;
+  }
+
+  return uniqueRows.length;
+}
+
+async function saveVideos(
+  rows
+) {
+  if (
+    !rows.length
+  ) {
+    return {
+      inserted: 0,
+      existing: 0
+    };
+  }
+
+  const uniqueRows =
+    [
+      ...new Map(
+        rows.map(
+          row => [
+            row.video_url,
+            row
+          ]
+        )
+      ).values()
+    ];
+
+  const urls =
+    uniqueRows.map(
+      row =>
+        row.video_url
+    );
+
+  const existingUrls =
+    new Set();
+
+  for (
+    let start = 0;
+    start < urls.length;
+    start += 100
+  ) {
+    const chunk =
+      urls.slice(
+        start,
+        start + 100
+      );
+
+    const {
+      data,
+      error
+    } =
+      await supabase
+        .from(
+          'videos'
+        )
+        .select(
+          'video_url'
+        )
+        .in(
+          'video_url',
+          chunk
+        );
+
+    if (
+      error
+    ) {
+      throw error;
+    }
+
+    for (
+      const row of
+      data || []
+    ) {
+      if (
+        row.video_url
+      ) {
+        existingUrls.add(
+          row.video_url
+        );
+      }
+    }
+  }
+
+  const rowsToInsert =
+    uniqueRows.filter(
+      row =>
+        !existingUrls.has(
+          row.video_url
+        )
+    );
+
+  if (
+    rowsToInsert.length
+  ) {
+    const {
+      error
+    } =
+      await supabase
+        .from(
+          'videos'
+        )
+        .insert(
+          rowsToInsert
+        );
+
+    if (
+      error
+    ) {
+      throw error;
+    }
+  }
+
+  return {
+    inserted:
+      rowsToInsert.length,
+
+    existing:
+      uniqueRows.length -
+      rowsToInsert.length
+  };
+}
 
 export async function syncFeeds() {
+  const startedAt =
+    Date.now();
 
-  if (feeds.length === 0) {
+  const deadline =
+    startedAt +
+    MAX_RUNTIME_MS;
 
+  if (
+    !feedEntries.length
+  ) {
     return {
-
       ok: false,
 
-      message:
-        'RSS_FEEDS belum diatur',
+      reason:
+        'RSS_FEEDS_empty',
 
       feeds: 0,
 
       articles: 0,
 
-      videos: 0
+      videos: 0,
 
+      failed: 0,
+
+      at:
+        new Date()
+          .toISOString()
     };
   }
 
+  const entries = [];
 
-  let processedFeeds = 0;
+  const seen =
+    new Set();
 
-  let processedItems = 0;
+  for (
+    const entry of
+    feedEntries
+  ) {
+    const key =
+      `${entry.type}:${entry.url}`;
 
-  let articlesSaved = 0;
-
-  let videosSaved = 0;
-
-  let failedFeeds = 0;
-
-  const errors = [];
-
-
-  for (const feedUrl of feeds) {
-
-    try {
-
-      console.log(
-        '[SYNC] Fetching:',
-        feedUrl
+    if (
+      !seen.has(
+        key
+      )
+    ) {
+      seen.add(
+        key
       );
 
-      const feed =
-        await parser.parseURL(
-          feedUrl
-        );
+      entries.push(
+        entry
+      );
+    }
+  }
 
-      processedFeeds++;
+  const limitedEntries =
+    entries.slice(
+      0,
+      Number(
+        process.env.RSS_MAX_FEEDS ||
+        30
+      )
+    );
 
-      const source =
-        String(
-          feed.title ||
-          new URL(feedUrl).hostname
-        )
-          .slice(0, 160);
+  const results =
+    await mapWithConcurrency(
+      limitedEntries,
+      FEED_CONCURRENCY,
 
-      const feedIsVideo =
-        isVideoFeed(feedUrl);
+      async entry => {
+        if (
+          Date.now() >=
+          deadline
+        ) {
+          return {
+            skipped: true,
 
-      const items =
-        (feed.items || [])
-          .slice(0, 100);
+            url:
+              entry.url,
 
-      processedItems +=
-        items.length;
+            type:
+              entry.type,
 
-
-      for (const item of items) {
-
-        try {
-
-          const itemIsVideo =
-            feedIsVideo ||
-            isVideoItem(item);
-
-
-          if (itemIsVideo) {
-
-            const result =
-              await saveVideo({
-                item,
-                source
-              });
-
-            if (result.saved) {
-              videosSaved++;
-            }
-
-          } else {
-
-            const result =
-              await saveArticle({
-                item,
-                source
-              });
-
-            if (result.saved) {
-              articlesSaved++;
-            }
-
-          }
-
-        } catch (itemError) {
-
-          console.error(
-            '[SYNC ITEM ERROR]',
-            itemError.message
-          );
-
+            reason:
+              'runtime_limit'
+          };
         }
 
+        try {
+          const {
+            feed,
+            latency
+          } =
+            await fetchFeed(
+              entry.url
+            );
+
+          const source =
+            String(
+              feed.title ||
+              new URL(
+                entry.url
+              ).hostname
+            )
+              .trim()
+              .slice(
+                0,
+                120
+              );
+
+          const articles =
+            [];
+
+          const videos =
+            [];
+
+          for (
+            const item of
+            (
+              feed.items ||
+              []
+            ).slice(
+              0,
+              MAX_ITEMS_PER_FEED
+            )
+          ) {
+            const isVideo =
+              entry.type ===
+              'video' ||
+              looksLikeVideo(
+                item
+              );
+
+            if (
+              isVideo
+            ) {
+              const video =
+                videoRowFromItem(
+                  item,
+                  entry.url,
+                  source
+                );
+
+              if (
+                video
+              ) {
+                videos.push(
+                  video
+                );
+              }
+
+            } else {
+              const article =
+                articleRowFromItem(
+                  item,
+                  entry.url,
+                  source
+                );
+
+              if (
+                article
+              ) {
+                articles.push(
+                  article
+                );
+              }
+            }
+          }
+
+          return {
+            ok: true,
+
+            url:
+              entry.url,
+
+            type:
+              entry.type,
+
+            source,
+
+            latency,
+
+            articles,
+
+            videos
+          };
+
+        } catch (
+          error
+        ) {
+          console.error(
+            '[SYNC] RSS failed:',
+            entry.url,
+            error?.message ||
+            error
+          );
+
+          return {
+            ok: false,
+
+            url:
+              entry.url,
+
+            type:
+              entry.type,
+
+            error:
+              error?.message ||
+              String(
+                error
+              )
+          };
+        }
       }
+    );
 
-    } catch (error) {
+  const articleRows =
+    results.flatMap(
+      result =>
+        result.articles ||
+        []
+    );
 
-      failedFeeds++;
+  const videoRows =
+    results.flatMap(
+      result =>
+        result.videos ||
+        []
+    );
 
-      errors.push({
+  const failedFeeds =
+    results.filter(
+      result =>
+        result &&
+        result.ok === false
+    );
 
-        feed: feedUrl,
+  const skippedFeeds =
+    results.filter(
+      result =>
+        result?.skipped
+    );
 
-        error: error.message
+  const articlesUpserted =
+    await saveArticles(
+      articleRows
+    );
 
-      });
+  const videoResult =
+    await saveVideos(
+      videoRows
+    );
 
-      console.error(
-        '[SYNC FEED ERROR]',
-        feedUrl,
-        error.message
+  const remainingMs =
+    deadline -
+    Date.now();
+
+  if (
+    remainingMs >
+    5000
+  ) {
+    await supabase
+      .rpc(
+        'rebuild_article_intelligence'
+      )
+      .catch(
+        () => {}
       );
-
-    }
-
   }
 
-
-  /* ===============================================
-     OPTIONAL DATABASE REBUILD FUNCTIONS
-  =============================================== */
-
-  try {
-    await supabase.rpc(
-      'rebuild_trending'
-    );
-  } catch (error) {
-    console.log(
-      '[TRENDING SKIPPED]',
-      error.message
-    );
+  if (
+    remainingMs >
+    10000
+  ) {
+    await supabase
+      .rpc(
+        'rebuild_live_events'
+      )
+      .catch(
+        () => {}
+      );
   }
-
-
-  try {
-    await supabase.rpc(
-      'rebuild_article_intelligence'
-    );
-  } catch (_) {}
-
-
-  try {
-    await supabase.rpc(
-      'rebuild_live_events'
-    );
-  } catch (_) {}
-
 
   return {
-
-    ok:
-      processedFeeds > 0,
+    ok: true,
 
     feeds:
-      feeds.length,
+      limitedEntries.length,
 
-    processedFeeds,
+    processedFeeds:
+      results.filter(
+        result =>
+          result?.ok
+      ).length,
 
-    processedItems,
+    failedFeeds:
+      failedFeeds.length,
+
+    skippedFeeds:
+      skippedFeeds.length,
 
     articles:
-      articlesSaved,
+      articlesUpserted,
 
     videos:
-      videosSaved,
+      videoResult.inserted,
 
-    failedFeeds,
+    existingVideos:
+      videoResult.existing,
 
-    errors,
+    durationMs:
+      Date.now() -
+      startedAt,
 
-    updatedAt:
-      new Date().toISOString()
+    at:
+      new Date()
+        .toISOString(),
 
+    errors:
+      failedFeeds.map(
+        feed => ({
+          url:
+            feed.url,
+
+          error:
+            feed.error
+        })
+      )
   };
 }
 
-
-/* =========================================================
-   LOCAL EXECUTION
-========================================================= */
-
 if (
-  process.argv[1] &&
   import.meta.url ===
   `file://${process.argv[1]}`
 ) {
-
   syncFeeds()
-    .then(result => {
+    .then(
+      result => {
+        console.log(
+          JSON.stringify(
+            result,
+            null,
+            2
+          )
+        );
+      }
+    )
+    .catch(
+      error => {
+        console.error(
+          error
+        );
 
-      console.log(
-        JSON.stringify(
-          result,
-          null,
-          2
-        )
-      );
-
-    })
-    .catch(error => {
-
-      console.error(error);
-
-      process.exit(1);
-
-    });
-
+        process.exitCode =
+          1;
+      }
+    );
 }
