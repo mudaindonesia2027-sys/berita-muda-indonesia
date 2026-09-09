@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#050b17" />
+  <meta name="description" content="Berita Muda Indonesia — Intelligent Media Network dengan berita, video, live update, dan teknologi newsroom modern." />
+  <title>Berita Muda Indonesia — Intelligent Media</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="icon" href="/assets/logo-berita-muda-round.png" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div><div class="grid-glow"></div>
+
+    <header class="site-header" id="siteHeader">
+      <div class="container utility-bar">
+        <div id="todayLabel">Memuat waktu…</div>
+        <div class="utility-links">
+          <span class="live-chip"><i></i> LIVE</span>
+          <span id="sourceStatus">Mengecek sumber berita</span>
+          <button class="utility-btn" id="themeToggle" aria-label="Ubah tema">◐</button>
+        </div>
+      </div>
+
+      <div class="container main-header">
+        <a class="brand" href="/" aria-label="Berita Muda Indonesia">
+          <span class="logo-orbit"><img src="/assets/logo-berita-muda-round.png" alt="Logo Berita Muda Indonesia" /></span>
+          <span class="brand-text"><strong>BERITA MUDA</strong><small>INDONESIA · INTELLIGENT MEDIA</small></span>
+        </a>
+
+        <form class="global-search" id="searchForm" role="search">
+          <span class="search-icon">⌕</span>
+          <input id="searchInput" type="search" placeholder="Cari berita, tokoh, topik, atau kata kunci…" autocomplete="off" />
+          <button type="submit">Cari</button>
+        </form>
+
+        <div class="header-controls">
+          <button class="header-icon" id="videoShortcut" title="Video">▻</button>
+          <button class="header-icon" id="notificationBtn" title="Notifikasi">♧<b id="notificationBadge">0</b></button>
+          <button class="account-btn" id="loginBtn">Masuk</button>
+          <button class="join-btn" id="joinBtn">Daftar</button>
+          <button class="header-icon mobile-only" id="menuToggle" aria-label="Menu">☰</button>
+        </div>
+      </div>
+
+      <nav class="category-nav" id="categoryNav">
+        <div class="container nav-inner">
+          <button class="nav-item active" data-category="">Beranda</button>
+          <button class="nav-item" data-category="NASIONAL">Nasional</button>
+          <button class="nav-item" data-category="INTERNASIONAL">Dunia</button>
+          <button class="nav-item" data-category="EKONOMI">Ekonomi</button>
+          <button class="nav-item" data-category="POLITIK">Politik</button>
+          <button class="nav-item" data-category="HUKUM">Hukum</button>
+          <button class="nav-item" data-category="TEKNOLOGI">Teknologi</button>
+          <button class="nav-item" data-category="OLAHRAGA">Sport</button>
+          <button class="nav-item" data-category="HIBURAN">Hiburan</button>
+          <button class="nav-item" data-category="LIFESTYLE">Lifestyle</button>
+          <button class="nav-item video-nav" id="videoNav">Video</button>
+        </div>
+      </nav>
+    </header>
+
+    <main class="container page">
+      <section class="breaking-bar" aria-live="polite">
+        <div class="breaking-badge"><span>ϟ</span> BREAKING NEWS</div>
+        <div class="ticker-wrap"><div class="ticker" id="tickerText">Menghubungkan ke mesin berita Berita Muda Indonesia…</div></div>
+        <div class="ticker-meta"><span id="clockLabel">--:-- WIB</span><button id="refreshBtn">↻ Perbarui</button></div>
+      </section>
+
+      <section class="hero-layout">
+        <article class="hero-card" id="heroCard">
+          <div class="hero-image" id="heroImage"></div>
+          <div class="hero-overlay"></div>
+          <div class="hero-content">
+            <div class="tag-row"><span class="tag danger" id="heroCategory">TOP STORY</span><span class="tag ghost">INTELLIGENT NEWSROOM</span></div>
+            <h1 id="heroTitle">Menunggu berita terbaru dari newsroom</h1>
+            <p id="heroSummary">Sistem akan menampilkan berita utama secara otomatis setelah sumber data aktif dan sinkronisasi berjalan.</p>
+            <div class="hero-meta"><span id="heroDate">LIVE DATA</span><span>◉</span><span id="heroViews">Realtime</span></div>
+            <button class="primary-cta" id="heroOpen">Baca Selengkapnya <span>→</span></button>
+          </div>
+        </article>
+
+        <section class="compact-stack" id="compactNews" aria-label="Berita cepat"></section>
+
+        <aside class="right-rail">
+          <button class="live-tv-card" id="liveTvBtn">
+            <div class="live-tv-visual"><span class="play-orb">▶</span></div>
+            <div><span class="eyebrow">BERITA MUDA VIDEO</span><h3>Tonton Video & Live Update</h3><small>Streaming dan berita visual</small></div>
+            <span class="live-mini">● LIVE</span>
+          </button>
+          <section class="trending-card">
+            <div class="card-head"><h3>Trending Hari Ini</h3><button id="openTrending">Lihat semua →</button></div>
+            <ol id="trendingList" class="trending-list"></ol>
+          </section>
+        </aside>
+      </section>
+
+      <section class="category-tiles" id="categoryTiles">
+        <button data-category="NASIONAL"><span>◉</span><b>Nasional</b><small>Berita dalam negeri</small></button>
+        <button data-category="INTERNASIONAL"><span>◎</span><b>Dunia</b><small>Isu internasional</small></button>
+        <button data-category="EKONOMI"><span>▥</span><b>Ekonomi</b><small>Bisnis & pasar</small></button>
+        <button data-category="POLITIK"><span>♜</span><b>Politik</b><small>Kebijakan & pemerintahan</small></button>
+        <button data-category="HUKUM"><span>⚖</span><b>Hukum</b><small>Regulasi & peristiwa</small></button>
+        <button data-category="TEKNOLOGI"><span>⌘</span><b>Teknologi</b><small>Digital & inovasi</small></button>
+        <button data-category="OLAHRAGA"><span>◌</span><b>Sport</b><small>Olahraga</small></button>
+        <button data-category="HIBURAN"><span>✦</span><b>Hiburan</b><small>Selebritas & budaya</small></button>
+      </section>
+
+      <section class="content-layout">
+        <div class="content-main">
+          <div class="section-title-row"><div><span class="eyebrow">INTELLIGENT FEED</span><h2 id="sectionTitle">Berita Terbaru</h2></div><div class="feed-tools"><button id="clearFilter" class="subtle-btn hidden">Reset</button><span id="feedCount">0 berita</span></div></div>
+          <div class="filter-pills" id="filterPills"><button class="pill active" data-category="">Semua</button><button class="pill" data-category="NASIONAL">Nasional</button><button class="pill" data-category="TEKNOLOGI">Teknologi</button><button class="pill" data-category="EKONOMI">Ekonomi</button><button class="pill" data-category="POLITIK">Politik</button></div>
+          <div id="loadingState" class="loading-grid"><div></div><div></div><div></div></div>
+          <div id="articlesGrid" class="article-grid"></div>
+          <div id="emptyState" class="empty-panel hidden"><div class="empty-orb">⌁</div><h3 id="emptyTitle">Newsroom sedang menunggu data</h3><p id="emptyText">API aktif, tetapi belum ada artikel yang tersedia. Periksa koneksi Supabase dan sinkronisasi sumber berita.</p><div class="empty-actions"><button class="primary-cta small" id="emptyRefresh">Coba Lagi</button><a href="/api/system/config" target="_blank" rel="noopener">Status sistem ↗</a></div></div>
+        </div>
+
+        <aside class="content-side">
+          <section class="video-panel" id="videoPanel">
+            <div class="card-head"><div><span class="eyebrow">VIDEO TERBARU</span><h3>Video Populer</h3></div><button id="showAllVideos">Lihat Semua →</button></div>
+            <div id="videoGrid" class="video-grid"><div class="video-empty">Memuat video…</div></div>
+          </section>
+          <section class="ad-panel">
+            <span class="ad-label">IKLAN PREMIUM</span><div class="ad-orb">↗</div><h3>Wujudkan Brand Anda Bersama Kami</h3><p>Promosi digital yang dapat diukur, fleksibel, dan terhubung dengan audiens.</p><button id="advertiseBtn">Pasang Iklan Sekarang <span>→</span></button>
+          </section>
+          <section class="live-update-panel"><div class="card-head"><div><span class="status-dot"></span><b>LIVE UPDATE</b></div><button id="refreshLive">↻</button></div><div id="liveUpdates" class="live-updates"></div></section>
+        </aside>
+      </section>
+
+      <section class="intelligence-banner">
+        <div><span class="eyebrow">BERITA MUDA INTELLIGENCE</span><h2>Lebih dari sekadar berita.</h2><p>Fondasi untuk rekomendasi cerdas, pembaruan otomatis, video, analitik, dan monetisasi media modern.</p></div>
+        <div class="intel-features"><span>◉ AI Recommendation</span><span>↻ Live Update</span><span>▻ Multi Platform</span><span>◌ Video & Live</span></div>
+        <button id="exploreBtn">Jelajahi Sekarang →</button>
+      </section>
+    </main>
+
+    <footer class="site-footer"><div class="container footer-grid"><div class="footer-brand"><img src="/assets/logo-berita-muda-round.png" alt="Berita Muda Indonesia" /><div><strong>BERITA MUDA<br/>INDONESIA</strong><span>Cepat · Akurat · Terpercaya</span></div></div><div><b>Redaksi</b><a href="/about.html">Profil</a><a href="/editorial.html">Pedoman Redaksi</a><a href="/contact.html">Kontak</a></div><div><b>Layanan</b><a href="#videoPanel">Video</a><a href="#advertiseBtn">Iklan</a><a href="/admin.html">Admin</a></div><div><b>Informasi</b><a href="/privacy.html">Privasi</a><a href="/terms.html">Ketentuan</a><a href="/disclaimer.html">Disclaimer</a></div><form id="newsletterForm" class="newsletter"><b>Ikuti Pembaruan</b><p>Ringkasan berita dan perkembangan produk.</p><div><input type="email" placeholder="Email Anda" required /><button type="submit">→</button></div></form></div><div class="container footer-bottom"><span>© <span id="year"></span> Berita Muda Indonesia</span><span>Powered by Intelligent Media Architecture</span></div></footer>
+
+    <div class="modal hidden" id="articleModal" role="dialog" aria-modal="true"><div class="modal-backdrop" data-close-modal></div><article class="modal-card"><button class="modal-close" data-close-modal>×</button><div id="modalBody"></div></article></div>
+    <div class="toast-zone" id="toastZone"></div>
+  </div>
+  <script src="/app.js" defer></script>
+</body>
+</html>
