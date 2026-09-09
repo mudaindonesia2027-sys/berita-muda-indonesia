@@ -1,0 +1,3 @@
+BERITA MUDA INDONESIA – FUTURE FINAL ULTRA MASTER
+Version: 6.0.0
+Purpose: Unified master development and deployment package

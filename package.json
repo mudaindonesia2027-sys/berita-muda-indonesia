@@ -1,0 +1,26 @@
+{
+  "name": "berita-muda-indonesia-final-master-one-file",
+  "version": "7.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "sync": "node src/sync.js",
+    "check": "node --check src/server.js && node --check src/sync.js && node --check src/supabase.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "morgan": "^1.10.0",
+    "rss-parser": "^3.13.0",
+    "express-rate-limit": "^8.0.1"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "description": "Final Master One File package consolidated from the V7 Premium Real Implementation archive and V6 production lineage."
+}
