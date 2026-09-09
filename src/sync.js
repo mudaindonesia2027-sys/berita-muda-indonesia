@@ -6,79 +6,47 @@ import { supabase } from './supabase.js';
 const parser = new Parser({
   timeout: 15000,
   headers: {
-    'User-Agent':
-      'BeritaMudaIndonesia/7.0 News Aggregator'
+    'User-Agent': 'BeritaMudaIndonesia/7.0'
   }
 });
 
 /* =========================================================
-   RSS SOURCES
+   RSS FEEDS
 ========================================================= */
 
-const feeds = (
-  process.env.RSS_FEEDS || ''
-)
+const feeds = (process.env.RSS_FEEDS || '')
   .split(',')
-  .map(
-    item => item.trim()
-  )
+  .map(item => item.trim())
   .filter(Boolean);
+
 
 /* =========================================================
    UTILITIES
 ========================================================= */
 
-const stripHtml = (
-  value = ''
-) =>
-  String(value)
-    .replace(
-      /<script[\s\S]*?<\/script>/gi,
-      ' '
-    )
-    .replace(
-      /<style[\s\S]*?<\/style>/gi,
-      ' '
-    )
-    .replace(
-      /<[^>]+>/g,
-      ' '
-    )
-    .replace(
-      /\s+/g,
-      ' '
-    )
+function stripHtml(value = '') {
+  return String(value)
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
+}
 
-const safeHtml = (
-  value = ''
-) =>
-  String(value)
-    .replace(
-      /<script[\s\S]*?<\/script>/gi,
-      ''
-    )
-    .replace(
-      /<style[\s\S]*?<\/style>/gi,
-      ''
-    )
-    .replace(
-      /\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi,
-      ''
-    )
-    .replace(
-      /javascript:/gi,
-      ''
-    )
+
+function safeHtml(value = '') {
+  return String(value)
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/javascript:/gi, '')
     .trim();
+}
 
-const normalizeUrl = (
-  value = ''
-) => {
+
+function normalizeUrl(value = '') {
   try {
-
-    const url =
-      new URL(value);
+    const url = new URL(value);
 
     url.hash = '';
 
@@ -90,136 +58,75 @@ const normalizeUrl = (
       'utm_content',
       'fbclid',
       'gclid'
-    ].forEach(
-      key =>
-        url.searchParams.delete(
-          key
-        )
-    );
+    ].forEach(key => {
+      url.searchParams.delete(key);
+    });
 
     return url.toString();
 
   } catch {
-
-    return String(value)
-      .trim();
-
+    return String(value).trim();
   }
-};
+}
 
-const createFingerprint = (
-  title = '',
-  summary = ''
-) =>
-  crypto
-    .createHash(
-      'sha256'
-    )
-    .update(
-      `${title}|${summary}`
-        .toLowerCase()
-    )
-    .digest(
-      'hex'
-    );
+
+function createFingerprint(title = '', summary = '') {
+  return crypto
+    .createHash('sha256')
+    .update(`${title}|${summary}`.toLowerCase())
+    .digest('hex');
+}
+
 
 /* =========================================================
    CATEGORY DETECTION
 ========================================================= */
 
-const detectCategory = (
-  url = '',
-  title = ''
-) => {
+function detectCategory(url = '', title = '') {
 
-  const text =
-    `${url} ${title}`
-      .toLowerCase();
+  const text = `${url} ${title}`.toLowerCase();
 
-  const categories = {
+  const rules = [
+    ['politik', 'POLITIK'],
+    ['pemerintahan', 'POLITIK'],
+    ['presiden', 'POLITIK'],
+    ['ekonomi', 'EKONOMI'],
+    ['bisnis', 'EKONOMI'],
+    ['keuangan', 'EKONOMI'],
+    ['teknologi', 'TEKNOLOGI'],
+    ['digital', 'TEKNOLOGI'],
+    ['tekno', 'TEKNOLOGI'],
+    ['olahraga', 'OLAHRAGA'],
+    ['sepakbola', 'OLAHRAGA'],
+    ['bola', 'OLAHRAGA'],
+    ['internasional', 'INTERNASIONAL'],
+    ['dunia', 'INTERNASIONAL'],
+    ['hiburan', 'HIBURAN'],
+    ['entertainment', 'HIBURAN'],
+    ['lifestyle', 'LIFESTYLE'],
+    ['kesehatan', 'KESEHATAN'],
+    ['pendidikan', 'PENDIDIKAN'],
+    ['hukum', 'HUKUM'],
+    ['kriminal', 'HUKUM'],
+    ['otomotif', 'OTOMOTIF'],
+    ['lingkungan', 'LINGKUNGAN']
+  ];
 
-    politik:
-      'POLITIK',
-
-    pemerintahan:
-      'POLITIK',
-
-    ekonomi:
-      'EKONOMI',
-
-    bisnis:
-      'EKONOMI',
-
-    teknologi:
-      'TEKNOLOGI',
-
-    digital:
-      'TEKNOLOGI',
-
-    olahraga:
-      'OLAHRAGA',
-
-    sepakbola:
-      'OLAHRAGA',
-
-    internasional:
-      'INTERNASIONAL',
-
-    dunia:
-      'INTERNASIONAL',
-
-    hiburan:
-      'HIBURAN',
-
-    entertainment:
-      'HIBURAN',
-
-    lifestyle:
-      'LIFESTYLE',
-
-    kesehatan:
-      'KESEHATAN',
-
-    pendidikan:
-      'PENDIDIKAN',
-
-    hukum:
-      'HUKUM'
-  };
-
-  for (
-    const [
-      keyword,
-      category
-    ]
-    of Object.entries(
-      categories
-    )
-  ) {
-
-    if (
-      text.includes(
-        keyword
-      )
-    ) {
-
+  for (const [keyword, category] of rules) {
+    if (text.includes(keyword)) {
       return category;
-
     }
-
   }
 
   return 'NASIONAL';
+}
 
-};
 
 /* =========================================================
    AUTHOR
 ========================================================= */
 
-const getAuthor = (
-  item
-) => {
+function getAuthor(item) {
 
   const author =
     item.creator ||
@@ -228,88 +135,380 @@ const getAuthor = (
     item['dc:Creator'] ||
     null;
 
-  if (!author) {
+  if (!author) return null;
 
-    return null;
-
-  }
-
-  return String(
-    author
-  )
+  return String(author)
     .trim()
-    .slice(
-      0,
-      160
-    );
+    .slice(0, 160);
+}
 
-};
 
 /* =========================================================
    IMAGE
 ========================================================= */
 
-const getImage = (
-  item
-) => {
+function getImage(item) {
 
-  if (
-    item.enclosure?.url
-  ) {
+  if (item.enclosure?.url) {
+    const type = String(item.enclosure.type || '');
 
-    return item
-      .enclosure
-      .url;
-
+    if (type.startsWith('image/')) {
+      return item.enclosure.url;
+    }
   }
 
-  if (
-    item['media:content']?.url
-  ) {
-
-    return item[
-      'media:content'
-    ].url;
-
+  if (item['media:content']?.url) {
+    return item['media:content'].url;
   }
 
-  if (
-    item['media:thumbnail']?.url
-  ) {
-
-    return item[
-      'media:thumbnail'
-    ].url;
-
+  if (item['media:thumbnail']?.url) {
+    return item['media:thumbnail'].url;
   }
 
-  if (
-    item.itunes?.image
-  ) {
-
-    return item
-      .itunes
-      .image;
-
+  if (item.itunes?.image) {
+    return item.itunes.image;
   }
 
   return null;
+}
 
-};
 
 /* =========================================================
-   FETCH FEED
+   VIDEO DETECTION
 ========================================================= */
 
-async function fetchFeed(
-  url
-) {
+function isVideoFeed(feedUrl = '') {
 
-  return parser.parseURL(
-    url
+  const url = feedUrl.toLowerCase();
+
+  return (
+    url.includes('/video') ||
+    url.includes('/videos') ||
+    url.includes('youtube') ||
+    url.includes('video.xml')
   );
-
 }
+
+
+function isVideoItem(item = {}) {
+
+  const enclosureType =
+    String(item.enclosure?.type || '').toLowerCase();
+
+  const link =
+    String(item.link || '').toLowerCase();
+
+  const guid =
+    String(item.guid || '').toLowerCase();
+
+  return (
+    enclosureType.startsWith('video/') ||
+    link.includes('/video') ||
+    guid.includes('/video') ||
+    Boolean(item.itunes)
+  );
+}
+
+
+function getVideoUrl(item) {
+
+  if (
+    item.enclosure?.url &&
+    String(item.enclosure?.type || '')
+      .toLowerCase()
+      .startsWith('video/')
+  ) {
+    return item.enclosure.url;
+  }
+
+  if (item.link) {
+    return item.link;
+  }
+
+  if (item.guid) {
+    return item.guid;
+  }
+
+  return null;
+}
+
+
+/* =========================================================
+   ARTICLE SYNC
+========================================================= */
+
+async function saveArticle({
+  item,
+  source
+}) {
+
+  const originalUrl =
+    item.link ||
+    item.guid;
+
+  if (!originalUrl) {
+    return {
+      saved: false,
+      reason: 'no_url'
+    };
+  }
+
+  const url =
+    normalizeUrl(originalUrl);
+
+  const title =
+    stripHtml(item.title || '')
+      .slice(0, 500);
+
+  if (!title) {
+    return {
+      saved: false,
+      reason: 'no_title'
+    };
+  }
+
+  const rawHtml =
+    item['content:encoded'] ||
+    item.content ||
+    '';
+
+  const html =
+    safeHtml(rawHtml);
+
+  const text =
+    stripHtml(
+      rawHtml ||
+      item.contentSnippet ||
+      item.summary ||
+      item.description ||
+      ''
+    );
+
+  const summary =
+    (
+      text ||
+      stripHtml(
+        item.summary ||
+        item.description ||
+        ''
+      )
+    )
+      .slice(0, 1000);
+
+  const wordCount =
+    text
+      .split(/\s+/)
+      .filter(Boolean)
+      .length;
+
+  const payload = {
+
+    title,
+
+    summary,
+
+    content:
+      text || null,
+
+    content_html:
+      html.length >= 80
+        ? html.slice(0, 50000)
+        : null,
+
+    url,
+
+    source_url:
+      url,
+
+    canonical_url:
+      url,
+
+    source,
+
+    author_name:
+      getAuthor(item),
+
+    category:
+      detectCategory(url, title),
+
+    image_url:
+      getImage(item),
+
+    published_at:
+      item.isoDate ||
+      item.pubDate ||
+      new Date().toISOString(),
+
+    status:
+      'published',
+
+    content_source:
+      html.length >= 80
+        ? 'rss'
+        : 'snippet',
+
+    content_available:
+      Boolean(text || html),
+
+    content_fingerprint:
+      createFingerprint(title, summary),
+
+    reading_minutes:
+      Math.max(
+        1,
+        Math.ceil(wordCount / 220)
+      ),
+
+    updated_at:
+      new Date().toISOString()
+  };
+
+  const { error } =
+    await supabase
+      .from('articles')
+      .upsert(
+        payload,
+        {
+          onConflict: 'url'
+        }
+      );
+
+  if (error) {
+    throw error;
+  }
+
+  return {
+    saved: true
+  };
+}
+
+
+/* =========================================================
+   VIDEO SYNC
+========================================================= */
+
+async function saveVideo({
+  item,
+  source
+}) {
+
+  const videoUrl =
+    getVideoUrl(item);
+
+  if (!videoUrl) {
+    return {
+      saved: false,
+      reason: 'no_video_url'
+    };
+  }
+
+  const title =
+    stripHtml(item.title || '')
+      .slice(0, 500);
+
+  if (!title) {
+    return {
+      saved: false,
+      reason: 'no_title'
+    };
+  }
+
+  const description =
+    stripHtml(
+      item['content:encoded'] ||
+      item.content ||
+      item.contentSnippet ||
+      item.summary ||
+      item.description ||
+      ''
+    )
+      .slice(0, 5000);
+
+  const payload = {
+
+    title,
+
+    description:
+      description || null,
+
+    video_url:
+      normalizeUrl(videoUrl),
+
+    thumbnail_url:
+      getImage(item),
+
+    source,
+
+    category:
+      detectCategory(
+        videoUrl,
+        title
+      ),
+
+    status:
+      'published',
+
+    updated_at:
+      new Date().toISOString()
+  };
+
+  /*
+    videos tidak terlihat memiliki
+    UNIQUE constraint pada video_url.
+
+    Karena itu cek dulu sebelum insert.
+  */
+
+  const { data: existing, error: checkError } =
+    await supabase
+      .from('videos')
+      .select('id')
+      .eq(
+        'video_url',
+        payload.video_url
+      )
+      .limit(1);
+
+  if (checkError) {
+    throw checkError;
+  }
+
+  if (
+    existing &&
+    existing.length > 0
+  ) {
+
+    const { error } =
+      await supabase
+        .from('videos')
+        .update(payload)
+        .eq(
+          'id',
+          existing[0].id
+        );
+
+    if (error) {
+      throw error;
+    }
+
+  } else {
+
+    const { error } =
+      await supabase
+        .from('videos')
+        .insert(payload);
+
+    if (error) {
+      throw error;
+    }
+
+  }
+
+  return {
+    saved: true
+  };
+}
+
 
 /* =========================================================
    MAIN SYNC
@@ -317,47 +516,39 @@ async function fetchFeed(
 
 export async function syncFeeds() {
 
-  if (
-    feeds.length === 0
-  ) {
+  if (feeds.length === 0) {
 
     return {
 
-      ok:
-        false,
+      ok: false,
 
       message:
         'RSS_FEEDS belum diatur',
 
-      feeds:
-        0,
+      feeds: 0,
 
-      inserted:
-        0
+      articles: 0,
+
+      videos: 0
 
     };
-
   }
 
-  let totalFeeds =
-    0;
 
-  let totalItems =
-    0;
+  let processedFeeds = 0;
 
-  let inserted =
-    0;
+  let processedItems = 0;
 
-  let failed =
-    0;
+  let articlesSaved = 0;
 
-  const errors =
-    [];
+  let videosSaved = 0;
 
-  for (
-    const feedUrl
-    of feeds
-  ) {
+  let failedFeeds = 0;
+
+  const errors = [];
+
+
+  for (const feedUrl of feeds) {
 
     try {
 
@@ -367,240 +558,66 @@ export async function syncFeeds() {
       );
 
       const feed =
-        await fetchFeed(
+        await parser.parseURL(
           feedUrl
         );
 
-      totalFeeds++;
+      processedFeeds++;
 
       const source =
         String(
           feed.title ||
-          new URL(
-            feedUrl
-          ).hostname
+          new URL(feedUrl).hostname
         )
-          .slice(
-            0,
-            160
-          );
+          .slice(0, 160);
+
+      const feedIsVideo =
+        isVideoFeed(feedUrl);
 
       const items =
-        (
-          feed.items ||
-          []
-        )
-          .slice(
-            0,
-            100
-          );
+        (feed.items || [])
+          .slice(0, 100);
 
-      totalItems +=
+      processedItems +=
         items.length;
 
-      for (
-        const item
-        of items
-      ) {
+
+      for (const item of items) {
 
         try {
 
-          const originalUrl =
-            item.link ||
-            item.guid;
+          const itemIsVideo =
+            feedIsVideo ||
+            isVideoItem(item);
 
-          if (
-            !originalUrl
-          ) {
 
-            continue;
+          if (itemIsVideo) {
 
-          }
+            const result =
+              await saveVideo({
+                item,
+                source
+              });
 
-          const url =
-            normalizeUrl(
-              originalUrl
-            );
+            if (result.saved) {
+              videosSaved++;
+            }
 
-          const title =
-            stripHtml(
-              item.title ||
-              ''
-            )
-              .slice(
-                0,
-                500
-              );
+          } else {
 
-          if (
-            !title
-          ) {
+            const result =
+              await saveArticle({
+                item,
+                source
+              });
 
-            continue;
+            if (result.saved) {
+              articlesSaved++;
+            }
 
           }
 
-          const rawHtml =
-            item[
-              'content:encoded'
-            ] ||
-            item.content ||
-            '';
-
-          const html =
-            safeHtml(
-              rawHtml
-            );
-
-          const text =
-            stripHtml(
-              rawHtml ||
-              item.contentSnippet ||
-              item.summary ||
-              item.description ||
-              ''
-            );
-
-          const summary =
-            (
-              text ||
-              stripHtml(
-                item.summary ||
-                item.description ||
-                ''
-              )
-            )
-              .slice(
-                0,
-                1000
-              );
-
-          const category =
-            detectCategory(
-              url,
-              title
-            );
-
-          const publishedAt =
-            item.isoDate ||
-            item.pubDate ||
-            new Date()
-              .toISOString();
-
-          const payload = {
-
-            title,
-
-            summary,
-
-            content:
-              text ||
-              null,
-
-            content_html:
-              html.length >= 80
-                ? html.slice(
-                    0,
-                    50000
-                  )
-                : null,
-
-            url,
-
-            source_url:
-              url,
-
-            canonical_url:
-              url,
-
-            source,
-
-            author_name:
-              getAuthor(
-                item
-              ),
-
-            category,
-
-            image_url:
-              getImage(
-                item
-              ),
-
-            published_at:
-              publishedAt,
-
-            status:
-              'published',
-
-            content_source:
-              html.length >= 80
-                ? 'rss'
-                : 'snippet',
-
-            content_available:
-              Boolean(
-                text ||
-                html
-              ),
-
-            content_fingerprint:
-              createFingerprint(
-                title,
-                summary
-              ),
-
-            reading_minutes:
-              Math.max(
-                1,
-                Math.ceil(
-                  (
-                    text
-                      .split(
-                        /\s+/
-                      )
-                      .filter(
-                        Boolean
-                      )
-                      .length
-                  ) / 220
-                )
-              ),
-
-            updated_at:
-              new Date()
-                .toISOString()
-
-          };
-
-          const {
-            error
-          } =
-            await supabase
-              .from(
-                'articles'
-              )
-              .upsert(
-                payload,
-                {
-                  onConflict:
-                    'url'
-                }
-              );
-
-          if (
-            error
-          ) {
-
-            throw error;
-
-          }
-
-          inserted++;
-
-        } catch (
-          itemError
-        ) {
+        } catch (itemError) {
 
           console.error(
             '[SYNC ITEM ERROR]',
@@ -611,19 +628,15 @@ export async function syncFeeds() {
 
       }
 
-    } catch (
-      error
-    ) {
+    } catch (error) {
 
-      failed++;
+      failedFeeds++;
 
       errors.push({
 
-        feed:
-          feedUrl,
+        feed: feedUrl,
 
-        error:
-          error.message
+        error: error.message
 
       });
 
@@ -637,88 +650,94 @@ export async function syncFeeds() {
 
   }
 
-  /*
-   Rebuild intelligence jika
-   function tersedia.
 
-   Error tidak boleh menghentikan
-   proses berita utama.
-  */
+  /* ===============================================
+     OPTIONAL DATABASE REBUILD FUNCTIONS
+  =============================================== */
 
   try {
+    await supabase.rpc(
+      'rebuild_trending'
+    );
+  } catch (error) {
+    console.log(
+      '[TRENDING SKIPPED]',
+      error.message
+    );
+  }
 
-    await supabase
-      .rpc(
-        'rebuild_article_intelligence'
-      );
-
-  } catch (_) {}
-
-  try {
-
-    await supabase
-      .rpc(
-        'rebuild_trending'
-      );
-
-  } catch (_) {}
 
   try {
-
-    await supabase
-      .rpc(
-        'rebuild_live_events'
-      );
-
+    await supabase.rpc(
+      'rebuild_article_intelligence'
+    );
   } catch (_) {}
+
+
+  try {
+    await supabase.rpc(
+      'rebuild_live_events'
+    );
+  } catch (_) {}
+
 
   return {
 
     ok:
-      failed <
-      feeds.length,
+      processedFeeds > 0,
 
     feeds:
       feeds.length,
 
-    processedFeeds:
-      totalFeeds,
+    processedFeeds,
 
-    items:
-      totalItems,
+    processedItems,
 
-    inserted,
+    articles:
+      articlesSaved,
 
-    failed,
+    videos:
+      videosSaved,
+
+    failedFeeds,
 
     errors,
 
     updatedAt:
-      new Date()
-        .toISOString()
+      new Date().toISOString()
 
   };
-
 }
 
+
 /* =========================================================
-   CLI
+   LOCAL EXECUTION
 ========================================================= */
 
 if (
+  process.argv[1] &&
   import.meta.url ===
   `file://${process.argv[1]}`
 ) {
 
-  const result =
-    await syncFeeds();
+  syncFeeds()
+    .then(result => {
 
-  console.log(
-    JSON.stringify(
-      result,
-      null,
-      2
-    )
-  );
+      console.log(
+        JSON.stringify(
+          result,
+          null,
+          2
+        )
+      );
+
+    })
+    .catch(error => {
+
+      console.error(error);
+
+      process.exit(1);
+
+    });
 
 }
