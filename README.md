@@ -11,3 +11,4 @@ Ini adalah **satu Master Project** untuk proses akhir sampai deployment producti
 
 ## Production
 Ikuti `DEPLOYMENT-CHECKLIST.md`. Jangan menganggap aplikasi sudah live hanya dengan meng-upload ZIP; layanan Supabase, OAuth, sumber RSS, environment variables, dan deployment harus dikonfigurasi serta diuji.
+wilayah kits
