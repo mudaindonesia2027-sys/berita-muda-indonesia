@@ -10,21 +10,21 @@ const parser = new Parser({
   }
 });
 
-const splitFeeds = value =>
+const splitFeeds = (value) =>
   String(value || '')
     .split(',')
-    .map(item => item.trim())
+    .map((item) => item.trim())
     .filter(Boolean);
 
 const articleFeeds = splitFeeds(process.env.RSS_FEEDS);
 const videoFeeds = splitFeeds(process.env.VIDEO_RSS_FEEDS);
 
 const feedEntries = [
-  ...articleFeeds.map(url => ({
+  ...articleFeeds.map((url) => ({
     url,
     type: 'article'
   })),
-  ...videoFeeds.map(url => ({
+  ...videoFeeds.map((url) => ({
     url,
     type: 'video'
   }))
@@ -32,81 +32,47 @@ const feedEntries = [
 
 const FEED_CONCURRENCY = Math.max(
   1,
-  Math.min(
-    6,
-    Number(process.env.RSS_CONCURRENCY || 4)
-  )
+  Math.min(6, Number(process.env.RSS_CONCURRENCY || 4))
 );
 
 const MAX_ITEMS_PER_FEED = Math.max(
   1,
-  Math.min(
-    60,
-    Number(process.env.RSS_MAX_ITEMS || 30)
-  )
+  Math.min(60, Number(process.env.RSS_MAX_ITEMS || 30))
 );
 
 const MAX_RUNTIME_MS = Math.max(
   10000,
   Math.min(
     55000,
-    Number(
-      process.env.RSS_MAX_RUNTIME_MS || 45000
-    )
+    Number(process.env.RSS_MAX_RUNTIME_MS || 45000)
   )
 );
 
 const RETRIES = Math.max(
   0,
-  Math.min(
-    2,
-    Number(process.env.RSS_RETRIES || 1)
-  )
+  Math.min(2, Number(process.env.RSS_RETRIES || 1))
 );
 
-const sleep = ms =>
-  new Promise(resolve =>
-    setTimeout(resolve, ms)
-  );
+const sleep = (ms) =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 const stripHtml = (value = '') =>
   String(value)
-    .replace(
-      /<script[\s\S]*?<\/script>/gi,
-      ' '
-    )
-    .replace(
-      /<style[\s\S]*?<\/style>/gi,
-      ' '
-    )
-    .replace(
-      /<[^>]+>/g,
-      ' '
-    )
-    .replace(
-      /\s+/g,
-      ' '
-    )
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 
 const safeHtmlFromFeed = (value = '') =>
   String(value)
-    .replace(
-      /<script[\s\S]*?<\/script>/gi,
-      ''
-    )
-    .replace(
-      /<style[\s\S]*?<\/style>/gi,
-      ''
-    )
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
     .replace(
       /\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi,
       ''
     )
-    .replace(
-      /javascript:/gi,
-      ''
-    )
+    .replace(/javascript:/gi, '')
     .trim();
 
 const canonicalUrl = (raw = '') => {
@@ -115,7 +81,7 @@ const canonicalUrl = (raw = '') => {
 
     url.hash = '';
 
-    [
+    const trackingParams = [
       'utm_source',
       'utm_medium',
       'utm_campaign',
@@ -123,39 +89,25 @@ const canonicalUrl = (raw = '') => {
       'utm_content',
       'fbclid',
       'gclid'
-    ].forEach(key =>
-      url.searchParams.delete(key)
-    );
+    ];
 
-    for (
-      const key of [
-        ...url.searchParams.keys()
-      ]
-    ) {
-      if (
-        key
-          .toLowerCase()
-          .startsWith('utm_')
-      ) {
+    trackingParams.forEach((key) => {
+      url.searchParams.delete(key);
+    });
+
+    for (const key of [...url.searchParams.keys()]) {
+      if (key.toLowerCase().startsWith('utm_')) {
         url.searchParams.delete(key);
       }
     }
 
-    url.hostname =
-      url.hostname.toLowerCase();
+    url.hostname = url.hostname.toLowerCase();
 
-    if (
-      url.pathname !== '/'
-    ) {
-      url.pathname =
-        url.pathname.replace(
-          /\/+$/,
-          ''
-        );
+    if (url.pathname !== '/') {
+      url.pathname = url.pathname.replace(/\/+$/, '');
     }
 
     return url.toString();
-
   } catch {
     return String(raw || '').trim();
   }
@@ -164,63 +116,35 @@ const canonicalUrl = (raw = '') => {
 const normalizeTitle = (value = '') =>
   stripHtml(value)
     .toLowerCase()
-    .replace(
-      /[^\p{L}\p{N}\s]/gu,
-      ' '
-    )
-    .replace(
-      /\s+/g,
-      ' '
-    )
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 
-const fingerprintOf = ({
-  title,
-  summary,
-  source
-}) =>
+const fingerprintOf = ({ title, summary, source }) =>
   crypto
     .createHash('sha256')
     .update(
-      `${normalizeTitle(title)}|${stripHtml(
-        summary
-      ).slice(
+      `${normalizeTitle(title)}|${stripHtml(summary).slice(
         0,
         500
-      )}|${String(
-        source || ''
-      ).toLowerCase()}`
+      )}|${String(source || '').toLowerCase()}`
     )
     .digest('hex');
 
-const eventKeyOf = ({
-  title,
-  category
-}) =>
+const eventKeyOf = ({ title, category }) =>
   crypto
     .createHash('sha256')
     .update(
       `${normalizeTitle(title)
         .split(' ')
-        .slice(
-          0,
-          14
-        )
+        .slice(0, 14)
         .join(' ')}|${category || ''}`
     )
     .digest('hex')
-    .slice(
-      0,
-      32
-    );
+    .slice(0, 32);
 
-const categoryFor = (
-  url,
-  title = ''
-) => {
-  const text =
-    `${url || ''} ${title || ''}`
-      .toLowerCase();
+const categoryFor = (url, title = '') => {
+  const text = `${url || ''} ${title || ''}`.toLowerCase();
 
   const categories = {
     politik: 'POLITIK',
@@ -237,17 +161,8 @@ const categoryFor = (
     gaya: 'LIFESTYLE'
   };
 
-  for (
-    const [
-      keyword,
-      category
-    ] of Object.entries(
-      categories
-    )
-  ) {
-    if (
-      text.includes(keyword)
-    ) {
+  for (const [keyword, category] of Object.entries(categories)) {
+    if (text.includes(keyword)) {
       return category;
     }
   }
@@ -255,165 +170,107 @@ const categoryFor = (
   return 'NASIONAL';
 };
 
-const authorOf = item =>
+const authorOf = (item) =>
   String(
     item.creator ||
-    item.author ||
-    item['dc:creator'] ||
-    item['dc:Creator'] ||
-    ''
+      item.author ||
+      item['dc:creator'] ||
+      item['dc:Creator'] ||
+      ''
   )
     .trim()
-    .slice(
-      0,
-      160
-    ) || null;
+    .slice(0, 160) || null;
 
-const imageOf = item => {
-  const mediaContent =
-    item['media:content'];
+const imageOf = (item) => {
+  const mediaContent = item['media:content'];
+  const mediaThumbnail = item['media:thumbnail'];
 
-  const mediaThumbnail =
-    item['media:thumbnail'];
+  const enclosureType = String(
+    item.enclosure?.type || ''
+  ).toLowerCase();
 
-  const enclosureType =
-    String(
-      item.enclosure?.type || ''
-    ).toLowerCase();
+  const enclosureImage = enclosureType.startsWith('image/')
+    ? item.enclosure?.url
+    : null;
 
-  const enclosureImage =
-    enclosureType.startsWith(
-      'image/'
-    )
-      ? item.enclosure?.url
-      : null;
+  const thumbnail = Array.isArray(mediaThumbnail)
+    ? mediaThumbnail[0]?.url
+    : mediaThumbnail?.url;
+
+  const mediaImage = Array.isArray(mediaContent)
+    ? mediaContent[0]?.url
+    : mediaContent?.url;
 
   return (
-    (
-      Array.isArray(
-        mediaThumbnail
-      )
-        ? mediaThumbnail[0]?.url
-        : mediaThumbnail?.url
-    ) ||
+    thumbnail ||
     item.itunes?.image ||
     item.image ||
     enclosureImage ||
-    (
-      Array.isArray(
-        mediaContent
-      )
-        ? mediaContent[0]?.url
-        : mediaContent?.url
-    ) ||
+    mediaImage ||
     null
   );
 };
 
-const videoUrlOf = item => {
-  const enclosureUrl =
-    item.enclosure?.url;
+const videoUrlOf = (item) => {
+  const enclosureUrl = item.enclosure?.url;
 
-  const enclosureType =
-    String(
-      item.enclosure?.type || ''
-    ).toLowerCase();
+  const enclosureType = String(
+    item.enclosure?.type || ''
+  ).toLowerCase();
 
-  const mediaContent =
-    item['media:content'];
+  const mediaContent = item['media:content'];
 
-  const mediaUrl =
-    Array.isArray(
-      mediaContent
-    )
-      ? mediaContent[0]?.url
-      : mediaContent?.url;
+  const mediaUrl = Array.isArray(mediaContent)
+    ? mediaContent[0]?.url
+    : mediaContent?.url;
 
   if (
     enclosureUrl &&
-    enclosureType.startsWith(
-      'video/'
-    )
+    enclosureType.startsWith('video/')
   ) {
     return enclosureUrl;
   }
 
-  if (
-    mediaUrl
-  ) {
+  if (mediaUrl) {
     return mediaUrl;
   }
 
-  return (
-    item.link ||
-    enclosureUrl ||
-    null
-  );
+  return item.link || enclosureUrl || null;
 };
 
-const looksLikeVideo = item => {
-  const url =
-    String(
-      videoUrlOf(item) || ''
-    ).toLowerCase();
+const looksLikeVideo = (item) => {
+  const url = String(videoUrlOf(item) || '').toLowerCase();
 
-  const enclosureType =
-    String(
-      item.enclosure?.type || ''
-    ).toLowerCase();
+  const enclosureType = String(
+    item.enclosure?.type || ''
+  ).toLowerCase();
 
   return (
-    enclosureType.startsWith(
-      'video/'
-    ) ||
+    enclosureType.startsWith('video/') ||
     /youtube\.com|youtu\.be|vimeo\.com|dailymotion\.com|\.mp4(?:\?|$)|\.webm(?:\?|$)|\.m3u8(?:\?|$)/.test(
       url
     )
   );
 };
 
-async function fetchFeed(
-  url
-) {
+async function fetchFeed(url) {
   let lastError;
 
-  for (
-    let attempt = 0;
-    attempt <= RETRIES;
-    attempt += 1
-  ) {
-    const startedAt =
-      Date.now();
+  for (let attempt = 0; attempt <= RETRIES; attempt += 1) {
+    const startedAt = Date.now();
 
     try {
-      const feed =
-        await parser.parseURL(
-          url
-        );
+      const feed = await parser.parseURL(url);
 
       return {
         feed,
-        latency:
-          Date.now() -
-          startedAt
+        latency: Date.now() - startedAt
       };
+    } catch (error) {
+      lastError = error;
 
-    } catch (
-      error
-    ) {
-      lastError =
-        error;
-
-      if (
-        attempt <
-        RETRIES
-      ) {
-        await sleep(
-          350 *
-          (
-            attempt + 1
-          )
-        );
+      if (attempt < RETRIES) {
+        await sleep(350 * (attempt + 1));
       }
     }
   }
@@ -421,377 +278,235 @@ async function fetchFeed(
   throw lastError;
 }
 
-async function mapWithConcurrency(
-  items,
-  limit,
-  worker
-) {
+async function mapWithConcurrency(items, limit, worker) {
   const results = [];
 
   let nextIndex = 0;
 
-  const workers =
-    Array.from(
-      {
-        length:
-          Math.min(
-            limit,
-            items.length
-          )
-      },
-      async () => {
-        while (
-          true
-        ) {
-          const index =
-            nextIndex;
+  const workers = Array.from(
+    {
+      length: Math.min(limit, items.length)
+    },
+    async () => {
+      while (true) {
+        const index = nextIndex;
+        nextIndex += 1;
 
-          nextIndex += 1;
-
-          if (
-            index >=
-            items.length
-          ) {
-            return;
-          }
-
-          results[index] =
-            await worker(
-              items[index],
-              index
-            );
+        if (index >= items.length) {
+          return;
         }
-      }
-    );
 
-  await Promise.all(
-    workers
+        results[index] = await worker(items[index], index);
+      }
+    }
   );
+
+  await Promise.all(workers);
 
   return results;
 }
 
-function articleRowFromItem(
-  item,
-  feedUrl,
-  source
-) {
+function articleRowFromItem(item, feedUrl, source) {
   const rawHtml =
     item['content:encoded'] ||
     item.content ||
     '';
 
-  const plain =
-    stripHtml(
-      item.contentSnippet ||
+  const plain = stripHtml(
+    item.contentSnippet ||
       rawHtml ||
       item.summary ||
       item.description ||
       ''
-    );
+  );
 
-  const contentHtml =
-    safeHtmlFromFeed(
-      rawHtml
-    );
+  const contentHtml = safeHtmlFromFeed(rawHtml);
 
-  const url =
-    canonicalUrl(
-      item.link ||
+  const url = canonicalUrl(
+    item.link ||
       item.guid ||
       ''
-    );
+  );
 
-  const title =
-    String(
-      item.title || ''
-    )
-      .trim()
-      .slice(
-        0,
-        500
-      );
+  const title = String(item.title || '')
+    .trim()
+    .slice(0, 500);
 
-  const category =
-    categoryFor(
-      feedUrl,
-      title
-    );
+  const category = categoryFor(feedUrl, title);
 
-  if (
-    !title ||
-    !url
-  ) {
+  if (!title || !url) {
     return null;
   }
 
   return {
     title,
 
-    summary:
-      plain.slice(
-        0,
-        600
-      ),
+    summary: plain.slice(0, 600),
 
     content_html:
-      contentHtml.length >=
-      80
-        ? contentHtml.slice(
-            0,
-            50000
-          )
+      contentHtml.length >= 80
+        ? contentHtml.slice(0, 50000)
         : null,
 
     url,
 
-    canonical_url:
-      url,
+    canonical_url: url,
 
-    content_fingerprint:
-      fingerprintOf({
-        title,
-        summary:
-          plain,
-        source
-      }),
+    content_fingerprint: fingerprintOf({
+      title,
+      summary: plain,
+      source
+    }),
 
-    source_url:
-      url,
+    source_url: url,
 
     source,
 
-    author_name:
-      authorOf(
-        item
-      ),
+    author_name: authorOf(item),
 
     category,
 
-    event_key:
-      eventKeyOf({
-        title,
-        category
-      }),
+    event_key: eventKeyOf({
+      title,
+      category
+    }),
 
-    editorial_status:
-      'auto',
+    editorial_status: 'auto',
 
-    image_url:
-      imageOf(
-        item
-      ),
+    image_url: imageOf(item),
 
     published_at:
       item.isoDate ||
       item.pubDate ||
-      new Date()
-        .toISOString(),
+      new Date().toISOString(),
 
     content_source:
-      contentHtml.length >=
-      80
+      contentHtml.length >= 80
         ? 'rss'
         : 'snippet',
 
     content_available:
-      contentHtml.length >=
-      80,
+      contentHtml.length >= 80,
 
-    status:
-      'published'
+    status: 'published'
   };
 }
 
-function videoRowFromItem(
-  item,
-  feedUrl,
-  source
-) {
-  const videoUrl =
-    canonicalUrl(
-      videoUrlOf(item) ||
+function videoRowFromItem(item, feedUrl, source) {
+  const videoUrl = canonicalUrl(
+    videoUrlOf(item) ||
       ''
-    );
+  );
 
-  const title =
-    String(
-      item.title || ''
-    )
-      .trim()
-      .slice(
-        0,
-        500
-      );
+  const title = String(item.title || '')
+    .trim()
+    .slice(0, 500);
 
-  if (
-    !title ||
-    !videoUrl
-  ) {
+  if (!title || !videoUrl) {
     return null;
   }
 
-  const description =
-    stripHtml(
-      item.contentSnippet ||
+  const description = stripHtml(
+    item.contentSnippet ||
       item.summary ||
       item.description ||
       item.content ||
       ''
-    ).slice(
-      0,
-      5000
-    );
+  ).slice(0, 5000);
 
   return {
     title,
 
     description:
-      description ||
-      null,
+      description || null,
 
-    video_url:
-      videoUrl,
+    video_url: videoUrl,
 
-    thumbnail_url:
-      imageOf(
-        item
-      ),
+    thumbnail_url: imageOf(item),
 
     source,
 
-    category:
-      categoryFor(
-        feedUrl,
-        title
-      ),
+    category: categoryFor(
+      feedUrl,
+      title
+    ),
 
-    status:
-      'published'
+    status: 'published'
   };
 }
 
-async function saveArticles(
-  rows
-) {
-  if (
-    !rows.length
-  ) {
+async function saveArticles(rows) {
+  if (!rows.length) {
     return 0;
   }
 
-  const uniqueRows =
-    [
-      ...new Map(
-        rows.map(
-          row => [
-            row.url,
-            row
-          ]
-        )
-      ).values()
-    ];
+  const uniqueRows = [
+    ...new Map(
+      rows.map((row) => [
+        row.url,
+        row
+      ])
+    ).values()
+  ];
 
-  const {
-    error
-  } =
-    await supabase
-      .from(
-        'articles'
-      )
-      .upsert(
-        uniqueRows,
-        {
-          onConflict:
-            'url',
+  const { error } = await supabase
+    .from('articles')
+    .upsert(uniqueRows, {
+      onConflict: 'url',
+      ignoreDuplicates: false
+    });
 
-          ignoreDuplicates:
-            false
-        }
-      );
-
-  if (
-    error
-  ) {
+  if (error) {
     throw error;
   }
 
   return uniqueRows.length;
 }
 
-async function saveVideos(
-  rows
-) {
-  if (
-    !rows.length
-  ) {
+async function saveVideos(rows) {
+  if (!rows.length) {
     return {
       inserted: 0,
       existing: 0
     };
   }
 
-  const uniqueRows =
-    [
-      ...new Map(
-        rows.map(
-          row => [
-            row.video_url,
-            row
-          ]
-        )
-      ).values()
-    ];
+  const uniqueRows = [
+    ...new Map(
+      rows.map((row) => [
+        row.video_url,
+        row
+      ])
+    ).values()
+  ];
 
-  const urls =
-    uniqueRows.map(
-      row =>
-        row.video_url
-    );
+  const urls = uniqueRows.map(
+    (row) => row.video_url
+  );
 
-  const existingUrls =
-    new Set();
+  const existingUrls = new Set();
 
   for (
     let start = 0;
     start < urls.length;
     start += 100
   ) {
-    const chunk =
-      urls.slice(
-        start,
-        start + 100
-      );
+    const chunk = urls.slice(
+      start,
+      start + 100
+    );
 
-    const {
-      data,
-      error
-    } =
-      await supabase
-        .from(
-          'videos'
-        )
-        .select(
-          'video_url'
-        )
-        .in(
-          'video_url',
-          chunk
-        );
+    const { data, error } = await supabase
+      .from('videos')
+      .select('video_url')
+      .in('video_url', chunk);
 
-    if (
-      error
-    ) {
+    if (error) {
       throw error;
     }
 
-    for (
-      const row of
-      data || []
-    ) {
-      if (
-        row.video_url
-      ) {
+    for (const row of data || []) {
+      if (row.video_url) {
         existingUrls.add(
           row.video_url
         );
@@ -799,38 +514,25 @@ async function saveVideos(
     }
   }
 
-  const rowsToInsert =
-    uniqueRows.filter(
-      row =>
-        !existingUrls.has(
-          row.video_url
-        )
-    );
+  const rowsToInsert = uniqueRows.filter(
+    (row) =>
+      !existingUrls.has(
+        row.video_url
+      )
+  );
 
-  if (
-    rowsToInsert.length
-  ) {
-    const {
-      error
-    } =
-      await supabase
-        .from(
-          'videos'
-        )
-        .insert(
-          rowsToInsert
-        );
+  if (rowsToInsert.length) {
+    const { error } = await supabase
+      .from('videos')
+      .insert(rowsToInsert);
 
-    if (
-      error
-    ) {
+    if (error) {
       throw error;
     }
   }
 
   return {
-    inserted:
-      rowsToInsert.length,
+    inserted: rowsToInsert.length,
 
     existing:
       uniqueRows.length -
@@ -839,16 +541,13 @@ async function saveVideos(
 }
 
 export async function syncFeeds() {
-  const startedAt =
-    Date.now();
+  const startedAt = Date.now();
 
   const deadline =
     startedAt +
     MAX_RUNTIME_MS;
 
-  if (
-    !feedEntries.length
-  ) {
+  if (!feedEntries.length) {
     return {
       ok: false,
 
@@ -864,65 +563,46 @@ export async function syncFeeds() {
       failed: 0,
 
       at:
-        new Date()
-          .toISOString()
+        new Date().toISOString()
     };
   }
 
   const entries = [];
 
-  const seen =
-    new Set();
+  const seen = new Set();
 
-  for (
-    const entry of
-    feedEntries
-  ) {
+  for (const entry of feedEntries) {
     const key =
       `${entry.type}:${entry.url}`;
 
-    if (
-      !seen.has(
-        key
-      )
-    ) {
-      seen.add(
-        key
-      );
+    if (!seen.has(key)) {
+      seen.add(key);
 
-      entries.push(
-        entry
-      );
+      entries.push(entry);
     }
   }
 
-  const limitedEntries =
-    entries.slice(
-      0,
-      Number(
-        process.env.RSS_MAX_FEEDS ||
+  const limitedEntries = entries.slice(
+    0,
+    Number(
+      process.env.RSS_MAX_FEEDS ||
         30
-      )
-    );
+    )
+  );
 
   const results =
     await mapWithConcurrency(
       limitedEntries,
       FEED_CONCURRENCY,
 
-      async entry => {
-        if (
-          Date.now() >=
-          deadline
-        ) {
+      async (entry) => {
+        if (Date.now() >= deadline) {
           return {
             skipped: true,
 
-            url:
-              entry.url,
+            url: entry.url,
 
-            type:
-              entry.type,
+            type: entry.type,
 
             reason:
               'runtime_limit'
@@ -938,45 +618,48 @@ export async function syncFeeds() {
               entry.url
             );
 
-          const source =
+          let source =
             String(
-              feed.title ||
-              new URL(
-                entry.url
-              ).hostname
-            )
-              .trim()
+              feed.title || ''
+            ).trim();
+
+          if (!source) {
+            try {
+              source =
+                new URL(
+                  entry.url
+                ).hostname;
+            } catch {
+              source =
+                'RSS Feed';
+            }
+          }
+
+          source =
+            source.slice(
+              0,
+              120
+            );
+
+          const articles = [];
+          const videos = [];
+
+          const items =
+            (feed.items || [])
               .slice(
                 0,
-                120
+                MAX_ITEMS_PER_FEED
               );
 
-          const articles =
-            [];
-
-          const videos =
-            [];
-
-          for (
-            const item of
-            (
-              feed.items ||
-              []
-            ).slice(
-              0,
-              MAX_ITEMS_PER_FEED
-            )
-          ) {
+          for (const item of items) {
             const isVideo =
               entry.type ===
-              'video' ||
+                'video' ||
               looksLikeVideo(
                 item
               );
 
-            if (
-              isVideo
-            ) {
+            if (isVideo) {
               const video =
                 videoRowFromItem(
                   item,
@@ -984,14 +667,9 @@ export async function syncFeeds() {
                   source
                 );
 
-              if (
-                video
-              ) {
-                videos.push(
-                  video
-                );
+              if (video) {
+                videos.push(video);
               }
-
             } else {
               const article =
                 articleRowFromItem(
@@ -1000,12 +678,8 @@ export async function syncFeeds() {
                   source
                 );
 
-              if (
-                article
-              ) {
-                articles.push(
-                  article
-                );
+              if (article) {
+                articles.push(article);
               }
             }
           }
@@ -1027,15 +701,11 @@ export async function syncFeeds() {
 
             videos
           };
-
-        } catch (
-          error
-        ) {
+        } catch (error) {
           console.error(
             '[SYNC] RSS failed:',
             entry.url,
-            error?.message ||
-            error
+            error?.message || error
           );
 
           return {
@@ -1049,9 +719,7 @@ export async function syncFeeds() {
 
             error:
               error?.message ||
-              String(
-                error
-              )
+              String(error)
           };
         }
       }
@@ -1059,28 +727,26 @@ export async function syncFeeds() {
 
   const articleRows =
     results.flatMap(
-      result =>
-        result.articles ||
-        []
+      (result) =>
+        result.articles || []
     );
 
   const videoRows =
     results.flatMap(
-      result =>
-        result.videos ||
-        []
+      (result) =>
+        result.videos || []
     );
 
   const failedFeeds =
     results.filter(
-      result =>
+      (result) =>
         result &&
         result.ok === false
     );
 
   const skippedFeeds =
     results.filter(
-      result =>
+      (result) =>
         result?.skipped
     );
 
@@ -1094,34 +760,62 @@ export async function syncFeeds() {
       videoRows
     );
 
+  /*
+   * Optional database intelligence rebuild.
+   *
+   * IMPORTANT:
+   * Do not use:
+   *
+   * supabase.rpc(...).catch(...)
+   *
+   * because Supabase query builders may not expose
+   * .catch() directly.
+   */
+
   const remainingMs =
     deadline -
     Date.now();
 
-  if (
-    remainingMs >
-    5000
-  ) {
-    await supabase
-      .rpc(
-        'rebuild_article_intelligence'
-      )
-      .catch(
-        () => {}
+  if (remainingMs > 5000) {
+    try {
+      const { error } =
+        await supabase.rpc(
+          'rebuild_article_intelligence'
+        );
+
+      if (error) {
+        console.error(
+          '[SYNC] rebuild_article_intelligence:',
+          error.message
+        );
+      }
+    } catch (error) {
+      console.error(
+        '[SYNC] intelligence rebuild failed:',
+        error?.message || error
       );
+    }
   }
 
-  if (
-    remainingMs >
-    10000
-  ) {
-    await supabase
-      .rpc(
-        'rebuild_live_events'
-      )
-      .catch(
-        () => {}
+  if (remainingMs > 10000) {
+    try {
+      const { error } =
+        await supabase.rpc(
+          'rebuild_live_events'
+        );
+
+      if (error) {
+        console.error(
+          '[SYNC] rebuild_live_events:',
+          error.message
+        );
+      }
+    } catch (error) {
+      console.error(
+        '[SYNC] live events rebuild failed:',
+        error?.message || error
       );
+    }
   }
 
   return {
@@ -1132,7 +826,7 @@ export async function syncFeeds() {
 
     processedFeeds:
       results.filter(
-        result =>
+        (result) =>
           result?.ok
       ).length,
 
@@ -1156,12 +850,11 @@ export async function syncFeeds() {
       startedAt,
 
     at:
-      new Date()
-        .toISOString(),
+      new Date().toISOString(),
 
     errors:
       failedFeeds.map(
-        feed => ({
+        (feed) => ({
           url:
             feed.url,
 
@@ -1177,25 +870,18 @@ if (
   `file://${process.argv[1]}`
 ) {
   syncFeeds()
-    .then(
-      result => {
-        console.log(
-          JSON.stringify(
-            result,
-            null,
-            2
-          )
-        );
-      }
-    )
-    .catch(
-      error => {
-        console.error(
-          error
-        );
+    .then((result) => {
+      console.log(
+        JSON.stringify(
+          result,
+          null,
+          2
+        )
+      );
+    })
+    .catch((error) => {
+      console.error(error);
 
-        process.exitCode =
-          1;
-      }
-    );
+      process.exitCode = 1;
+    });
 }
