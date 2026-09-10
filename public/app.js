@@ -1,350 +1,595 @@
 (() => {
+  'use strict';
+
+  /* =========================================================
+     BERITA MUDA INDONESIA
+     INTELLIGENT FRONTEND APPLICATION
+     NEWS + VIDEO
+  ========================================================= */
+
   const state = {
     category: '',
     query: '',
     articles: [],
     videos: [],
+    trending: [],
     loading: false,
+    page: 0,
+    limit: 24,
+    hasMore: true,
     autoTimer: null,
     heroId: null,
-    sessionId:
-      localStorage.getItem('bmi-session-id') ||
-      crypto.randomUUID(),
-    articleReadTimers: new Map()
+    currentArticle: null,
+    currentVideo: null
   };
 
-  localStorage.setItem(
-    'bmi-session-id',
-    state.sessionId
-  );
+  /* =========================================================
+     DOM HELPERS
+  ========================================================= */
 
-  const $ = (selector, root = document) =>
-    root.querySelector(selector);
+  const $ = (
+    selector,
+    root = document
+  ) => root.querySelector(selector);
 
-  const $$ = (selector, root = document) =>
-    [...root.querySelectorAll(selector)];
+  const $$ = (
+    selector,
+    root = document
+  ) => [
+    ...root.querySelectorAll(selector)
+  ];
 
   const els = {
-    today: $('#todayLabel'),
-    clock: $('#clockLabel'),
-    sourceStatus: $('#sourceStatus'),
-    ticker: $('#tickerText'),
+    today:
+      $('#todayLabel'),
 
-    heroImage: $('#heroImage'),
-    heroCategory: $('#heroCategory'),
-    heroTitle: $('#heroTitle'),
-    heroSummary: $('#heroSummary'),
-    heroDate: $('#heroDate'),
-    heroViews: $('#heroViews'),
-    heroOpen: $('#heroOpen'),
+    clock:
+      $('#clockLabel'),
 
-    compact: $('#compactNews'),
-    trending: $('#trendingList'),
+    sourceStatus:
+      $('#sourceStatus'),
 
-    nav: $('#categoryNav'),
-    tiles: $('#categoryTiles'),
-    pills: $('#filterPills'),
+    ticker:
+      $('#tickerText'),
 
-    section: $('#sectionTitle'),
-    count: $('#feedCount'),
-    clear: $('#clearFilter'),
+    heroImage:
+      $('#heroImage'),
 
-    grid: $('#articlesGrid'),
-    loading: $('#loadingState'),
-    empty: $('#emptyState'),
-    emptyTitle: $('#emptyTitle'),
-    emptyText: $('#emptyText'),
+    heroCategory:
+      $('#heroCategory'),
 
-    refresh: $('#refreshBtn'),
-    emptyRefresh: $('#emptyRefresh'),
+    heroTitle:
+      $('#heroTitle'),
 
-    form: $('#searchForm'),
-    search: $('#searchInput'),
+    heroSummary:
+      $('#heroSummary'),
 
-    videoGrid: $('#videoGrid'),
-    liveUpdates: $('#liveUpdates'),
+    heroDate:
+      $('#heroDate'),
 
-    modal: $('#articleModal'),
-    modalBody: $('#modalBody'),
+    heroViews:
+      $('#heroViews'),
 
-    toast: $('#toastZone'),
+    heroOpen:
+      $('#heroOpen'),
 
-    theme: $('#themeToggle'),
-    videoShortcut: $('#videoShortcut'),
-    videoNav: $('#videoNav'),
-    liveTv: $('#liveTvBtn'),
-    showAllVideos: $('#showAllVideos')
+    compact:
+      $('#compactNews'),
+
+    trending:
+      $('#trendingList'),
+
+    nav:
+      $('#categoryNav'),
+
+    tiles:
+      $('#categoryTiles'),
+
+    pills:
+      $('#filterPills'),
+
+    section:
+      $('#sectionTitle'),
+
+    count:
+      $('#feedCount'),
+
+    clear:
+      $('#clearFilter'),
+
+    grid:
+      $('#articlesGrid'),
+
+    loading:
+      $('#loadingState'),
+
+    empty:
+      $('#emptyState'),
+
+    emptyTitle:
+      $('#emptyTitle'),
+
+    emptyText:
+      $('#emptyText'),
+
+    refresh:
+      $('#refreshBtn'),
+
+    emptyRefresh:
+      $('#emptyRefresh'),
+
+    form:
+      $('#searchForm'),
+
+    search:
+      $('#searchInput'),
+
+    videoGrid:
+      $('#videoGrid'),
+
+    liveUpdates:
+      $('#liveUpdates'),
+
+    modal:
+      $('#articleModal'),
+
+    modalBody:
+      $('#modalBody'),
+
+    toast:
+      $('#toastZone'),
+
+    theme:
+      $('#themeToggle'),
+
+    videoShortcut:
+      $('#videoShortcut'),
+
+    videoNav:
+      $('#videoNav'),
+
+    liveTv:
+      $('#liveTvBtn'),
+
+    showAllVideos:
+      $('#showAllVideos')
   };
 
-  /* =====================================================
-     HELPERS
-  ===================================================== */
+  /* =========================================================
+     HTML ESCAPE
+  ========================================================= */
 
-  const escapeHtml = value =>
-    String(value ?? '').replace(
-      /[&<>"']/g,
-      character =>
-        ({
-          '&': '&amp;',
-          '<': '&lt;',
-          '>': '&gt;',
-          '"': '&quot;',
-          "'": '&#39;'
-        })[character]
-    );
-
-  const stripHtml = value =>
-    String(value ?? '')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-  const safeHtml = value =>
-    String(value ?? '')
-      .replace(
-        /<script[\s\S]*?<\/script>/gi,
+  const escapeHtml =
+    value =>
+      String(
+        value ??
         ''
-      )
-      .replace(
-        /<style[\s\S]*?<\/style>/gi,
-        ''
-      )
-      .replace(
-        /\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi,
-        ''
-      )
-      .replace(/javascript:/gi, '');
+      ).replace(
+        /[&<>"']/g,
+        character =>
+          ({
+            '&':
+              '&amp;',
 
-  const articleTime = article =>
-    article?.published_at ||
-    article?.created_at ||
-    article?.updated_at;
+            '<':
+              '&lt;',
 
-  const imageUrl = item =>
-    item?.image_url ||
-    item?.thumbnail_url ||
-    '';
+            '>':
+              '&gt;',
 
-  const numberFormat = value =>
-    Number(value || 0).toLocaleString('id-ID');
+            '"':
+              '&quot;',
 
-  const readingTime = article => {
-    const minutes = Number(
-      article?.reading_minutes
-    );
-
-    if (
-      Number.isFinite(minutes) &&
-      minutes > 0
-    ) {
-      return `${minutes} menit baca`;
-    }
-
-    const content =
-      stripHtml(
-        article?.content ||
-        article?.content_html ||
-        article?.summary ||
-        ''
+            "'":
+              '&#39;'
+          })[
+            character
+          ]
       );
 
-    const words =
-      content.split(/\s+/).filter(Boolean).length;
+  /* =========================================================
+     STRIP HTML
+  ========================================================= */
 
-    return `${Math.max(
-      1,
-      Math.ceil(words / 200)
-    )} menit baca`;
-  };
-
-  const fmtDate = value => {
-    if (!value) {
-      return 'Baru diperbarui';
-    }
-
-    const date = new Date(value);
-
-    if (
-      Number.isNaN(
-        date.getTime()
+  const stripHtml =
+    value =>
+      String(
+        value ??
+        ''
       )
-    ) {
-      return 'Baru diperbarui';
-    }
-
-    const difference =
-      Date.now() -
-      date.getTime();
-
-    if (difference < 60_000) {
-      return 'Baru saja';
-    }
-
-    if (difference < 3_600_000) {
-      return `${Math.max(
-        1,
-        Math.floor(
-          difference / 60_000
+        .replace(
+          /<[^>]+>/g,
+          ' '
         )
-      )} menit lalu`;
-    }
+        .replace(
+          /\s+/g,
+          ' '
+        )
+        .trim();
 
-    if (
-      difference <
-      86_400_000
-    ) {
-      return `${Math.floor(
-        difference / 3_600_000
-      )} jam lalu`;
-    }
+  /* =========================================================
+     DATE FORMAT
+  ========================================================= */
 
-    return new Intl.DateTimeFormat(
-      'id-ID',
-      {
-        day: '2-digit',
-        month: 'long',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+  const fmtDate =
+    value => {
+
+      if (
+        !value
+      ) {
+        return 'Baru diperbarui';
       }
-    ).format(date);
-  };
 
-  const absoluteDate = value => {
-    if (!value) {
-      return '';
-    }
+      const date =
+        new Date(
+          value
+        );
 
-    const date = new Date(value);
-
-    if (
-      Number.isNaN(
-        date.getTime()
-      )
-    ) {
-      return '';
-    }
-
-    return new Intl.DateTimeFormat(
-      'id-ID',
-      {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+      if (
+        Number.isNaN(
+          date.getTime()
+        )
+      ) {
+        return 'Baru diperbarui';
       }
-    ).format(date);
-  };
 
-  const toast = (
-    message,
-    type = ''
-  ) => {
-    const notification =
-      document.createElement('div');
+      const difference =
+        Date.now() -
+        date.getTime();
 
-    notification.className =
-      `toast ${type}`;
+      if (
+        difference <
+        60_000
+      ) {
+        return 'Baru saja';
+      }
 
-    notification.textContent =
-      message;
+      if (
+        difference <
+        3_600_000
+      ) {
+        return `${
+          Math.max(
+            1,
+            Math.floor(
+              difference /
+              60_000
+            )
+          )
+        } menit lalu`;
+      }
 
-    els.toast.appendChild(
-      notification
-    );
+      if (
+        difference <
+        86_400_000
+      ) {
+        return `${
+          Math.floor(
+            difference /
+            3_600_000
+          )
+        } jam lalu`;
+      }
 
-    setTimeout(
-      () => notification.remove(),
-      3600
-    );
-  };
-
-  const trackEvent = async ({
-    event_type,
-    content_type = null,
-    content_id = null
-  }) => {
-    try {
-      await fetch(
-        '/api/analytics/event',
+      return new Intl.DateTimeFormat(
+        'id-ID',
         {
-          method: 'POST',
+          day:
+            '2-digit',
 
+          month:
+            'short',
+
+          year:
+            'numeric',
+
+          hour:
+            '2-digit',
+
+          minute:
+            '2-digit'
+        }
+      ).format(
+        date
+      );
+    };
+
+  /* =========================================================
+     DATE SOURCE
+  ========================================================= */
+
+  const articleTime =
+    item =>
+      item?.published_at ||
+      item?.created_at ||
+      item?.updated_at ||
+      null;
+
+  /* =========================================================
+     IMAGE URL
+  ========================================================= */
+
+  const imageUrl =
+    item =>
+      item?.image_url ||
+      item?.thumbnail_url ||
+      item?.image ||
+      '';
+
+  /* =========================================================
+     CONTENT URL
+  ========================================================= */
+
+  const getContentUrl =
+    item =>
+      item?.url ||
+      item?.canonical_url ||
+      item?.source_url ||
+      '';
+
+  /* =========================================================
+     TOAST
+  ========================================================= */
+
+  const toast =
+    (
+      message,
+      type = ''
+    ) => {
+
+      if (
+        !els.toast
+      ) {
+        return;
+      }
+
+      const notification =
+        document.createElement(
+          'div'
+        );
+
+      notification.className =
+        `toast ${type}`;
+
+      notification.textContent =
+        message;
+
+      els.toast.appendChild(
+        notification
+      );
+
+      setTimeout(
+        () =>
+          notification.remove(),
+
+        4000
+      );
+    };
+
+  /* =========================================================
+     FETCH JSON
+  ========================================================= */
+
+  async function fetchJson(
+    url,
+    options = {}
+  ) {
+
+    const response =
+      await fetch(
+        url,
+        {
           headers: {
-            'Content-Type':
-              'application/json'
+            Accept:
+              'application/json',
+
+            ...(
+              options.headers ||
+              {}
+            )
           },
 
-          body: JSON.stringify({
-            event_type,
-            content_type,
-            content_id,
-            path:
-              window.location.pathname,
+          cache:
+            'no-store',
 
-            referrer:
-              document.referrer,
-
-            session_id:
-              state.sessionId
-          })
+          ...options
         }
       );
-    } catch (_) {
-      /* analytics tidak boleh
-         merusak aplikasi */
-    }
-  };
 
-  /* =====================================================
+    let data =
+      null;
+
+    try {
+      data =
+        await response.json();
+
+    } catch (
+      error
+    ) {
+
+      data =
+        null;
+    }
+
+    if (
+      !response.ok
+    ) {
+
+      const message =
+        data?.error ||
+        data?.message ||
+        `Request gagal (${response.status})`;
+
+      throw new Error(
+        message
+      );
+    }
+
+    return data;
+  }
+
+  /* =========================================================
+     POST
+  ========================================================= */
+
+  async function post(
+    url,
+    body = null
+  ) {
+
+    try {
+
+      const options = {
+        method:
+          'POST',
+
+        headers: {
+          Accept:
+            'application/json'
+        }
+      };
+
+      if (
+        body !== null
+      ) {
+
+        options.headers[
+          'Content-Type'
+        ] =
+          'application/json';
+
+        options.body =
+          JSON.stringify(
+            body
+          );
+      }
+
+      return await fetchJson(
+        url,
+        options
+      );
+
+    } catch (
+      error
+    ) {
+
+      console.warn(
+        '[POST]',
+        url,
+        error.message
+      );
+
+      return null;
+    }
+  }
+
+  /* =========================================================
+     ANALYTICS EVENT
+  ========================================================= */
+
+  function trackEvent(
+    eventType,
+    contentType = null,
+    contentId = null
+  ) {
+
+    post(
+      '/api/events',
+      {
+        event_type:
+          eventType,
+
+        content_type:
+          contentType,
+
+        content_id:
+          contentId,
+
+        path:
+          window.location.pathname
+      }
+    );
+  }
+
+  /* =========================================================
      CLOCK
-  ===================================================== */
+  ========================================================= */
 
   function updateClock() {
+
     const now =
       new Date();
 
-    if (els.today) {
+    if (
+      els.today
+    ) {
+
       els.today.textContent =
         new Intl.DateTimeFormat(
           'id-ID',
           {
-            weekday: 'long',
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric'
+            weekday:
+              'long',
+
+            day:
+              'numeric',
+
+            month:
+              'long',
+
+            year:
+              'numeric'
           }
-        ).format(now);
+        ).format(
+          now
+        );
     }
 
-    if (els.clock) {
+    if (
+      els.clock
+    ) {
+
       els.clock.textContent =
         new Intl.DateTimeFormat(
           'id-ID',
           {
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: false,
+            hour:
+              '2-digit',
+
+            minute:
+              '2-digit',
+
+            second:
+              '2-digit',
+
+            hour12:
+              false,
+
             timeZone:
               'Asia/Jakarta'
           }
-        ).format(now) +
+        ).format(
+          now
+        ) +
         ' WIB';
     }
   }
 
-  /* =====================================================
+  /* =========================================================
      LOADING
-  ===================================================== */
+  ========================================================= */
 
   function setLoading(
     active
   ) {
+
     state.loading =
       active;
 
-    if (els.loading) {
+    if (
+      els.loading
+    ) {
+
       els.loading.classList.toggle(
         'hidden',
         !active
@@ -355,46 +600,93 @@
       active &&
       els.empty
     ) {
+
       els.empty.classList.add(
         'hidden'
       );
     }
   }
 
+  /* =========================================================
+     CATEGORY
+  ========================================================= */
+
   function activateCategory(
     category
   ) {
+
     state.category =
-      category;
+      category ||
+      '';
 
     $$(
-      '.nav-item[data-category]'
-    ).forEach(button =>
-      button.classList.toggle(
-        'active',
-        button.dataset.category ===
-          category
-      )
-    );
+      '[data-category]'
+    ).forEach(
+      button => {
 
-    $$('.pill').forEach(
-      button =>
         button.classList.toggle(
           'active',
+
           button.dataset.category ===
-            category
-        )
+          state.category
+        );
+      }
     );
   }
 
-  /* =====================================================
+  /* =========================================================
+     ARTICLE IMAGE
+  ========================================================= */
+
+  function createArticleImage(
+    article
+  ) {
+
+    const image =
+      imageUrl(
+        article
+      );
+
+    if (
+      image
+    ) {
+
+      return `
+        <div class="article-thumb">
+          <img
+            src="${escapeHtml(
+              image
+            )}"
+            alt="${escapeHtml(
+              article.title ||
+              'Berita'
+            )}"
+            loading="lazy"
+            onerror="
+              this.style.display='none';
+              this.parentElement.classList.add('no-image');
+            "
+          >
+        </div>
+      `;
+    }
+
+    return `
+      <div class="article-thumb no-image">
+        <span>BERITA MUDA</span>
+      </div>
+    `;
+  }
+
+  /* =========================================================
      ARTICLE CARD
-  ===================================================== */
+  ========================================================= */
 
   function articleCard(
     article,
-    index
+    index = 0
   ) {
+
     const card =
       document.createElement(
         'article'
@@ -407,9 +699,6 @@
           : ''
       }`;
 
-    const image =
-      imageUrl(article);
-
     const title =
       article.title ||
       'Berita terbaru';
@@ -419,20 +708,15 @@
         article.summary ||
         article.content ||
         article.content_html ||
-        'Ringkasan berita belum tersedia.'
-      );
+        ''
+      ) ||
+      'Baca informasi lengkap dan perkembangan terbaru.';
 
-    card.innerHTML = `
-      <div
-        class="article-thumb"
-        ${
-          image
-            ? `style="background-image:url('${escapeHtml(
-                image
-              )}')"`
-            : ''
-        }
-      ></div>
+    card.innerHTML =
+      `
+      ${createArticleImage(
+        article
+      )}
 
       <div class="article-body">
 
@@ -441,7 +725,7 @@
           <span class="article-category">
             ${escapeHtml(
               article.category ||
-                'TERBARU'
+              'TERBARU'
             )}
           </span>
 
@@ -471,25 +755,47 @@
 
         <div class="article-foot">
 
-          <span>
+          <span class="article-source">
             ${escapeHtml(
-              article.author_name ||
-                article.source ||
-                'Berita Muda Indonesia'
+              article.source ||
+              'Berita Muda Indonesia'
             )}
           </span>
 
-          <span class="read-link">
-            Baca →
-          </span>
+          <div class="article-stats">
+
+            <span>
+              👁️ ${
+                Number(
+                  article.views ||
+                  0
+                ).toLocaleString(
+                  'id-ID'
+                )
+              }
+            </span>
+
+            <span>
+              ❤️ ${
+                Number(
+                  article.likes ||
+                  0
+                ).toLocaleString(
+                  'id-ID'
+                )
+              }
+            </span>
+
+          </div>
 
         </div>
 
       </div>
-    `;
+      `;
 
     card.addEventListener(
       'click',
+
       () =>
         openArticle(
           article.id,
@@ -500,65 +806,91 @@
     return card;
   }
 
-  /* =====================================================
+  /* =========================================================
      HERO
-  ===================================================== */
+  ========================================================= */
 
   function renderHero() {
+
     const article =
-      state.articles[0];
+      state.articles[
+        0
+      ];
 
     state.heroId =
       article?.id ||
       null;
 
-    if (!article) {
-      els.heroImage?.classList.remove(
-        'has-image'
-      );
+    if (
+      !article
+    ) {
 
-      if (els.heroImage) {
+      if (
+        els.heroImage
+      ) {
+
         els.heroImage.style.backgroundImage =
           '';
+
+        els.heroImage.classList.remove(
+          'has-image'
+        );
       }
 
-      if (els.heroCategory) {
+      if (
+        els.heroCategory
+      ) {
         els.heroCategory.textContent =
           'TOP STORY';
       }
 
-      if (els.heroTitle) {
+      if (
+        els.heroTitle
+      ) {
         els.heroTitle.textContent =
           'Newsroom siap menerima pembaruan terbaru';
       }
 
-      if (els.heroSummary) {
+      if (
+        els.heroSummary
+      ) {
         els.heroSummary.textContent =
-          'Berita utama akan tampil otomatis ketika sumber data dan sinkronisasi newsroom aktif.';
+          'Berita utama akan tampil otomatis ketika sumber berita aktif.';
       }
 
-      if (els.heroDate) {
+      if (
+        els.heroDate
+      ) {
         els.heroDate.textContent =
           'LIVE DATA';
       }
 
-      if (els.heroViews) {
+      if (
+        els.heroViews
+      ) {
         els.heroViews.textContent =
           'Menunggu sinkronisasi';
       }
 
-      if (els.ticker) {
+      if (
+        els.ticker
+      ) {
         els.ticker.textContent =
-          'Sumber berita belum mengirim artikel baru.';
+          'Sistem sedang menunggu berita terbaru.';
       }
 
       return;
     }
 
     const image =
-      imageUrl(article);
+      imageUrl(
+        article
+      );
 
-    if (els.heroImage) {
+    if (
+      els.heroImage
+    ) {
+
       els.heroImage.style.backgroundImage =
         image
           ? `url("${image.replace(
@@ -569,59 +901,95 @@
 
       els.heroImage.classList.toggle(
         'has-image',
-        Boolean(image)
+        Boolean(
+          image
+        )
       );
     }
 
-    if (els.heroCategory) {
+    if (
+      els.heroCategory
+    ) {
+
       els.heroCategory.textContent =
-        article.category ||
-        'TOP STORY';
+        article.breaking
+          ? 'BREAKING NEWS'
+          : (
+              article.category ||
+              'TOP STORY'
+            );
     }
 
-    if (els.heroTitle) {
+    if (
+      els.heroTitle
+    ) {
+
       els.heroTitle.textContent =
         article.title ||
         'Berita terbaru';
     }
 
-    if (els.heroSummary) {
+    if (
+      els.heroSummary
+    ) {
+
       els.heroSummary.textContent =
         stripHtml(
           article.summary ||
           article.content ||
           article.content_html ||
-          'Ringkasan berita terbaru dari newsroom.'
-        );
+          ''
+        ) ||
+        'Ringkasan berita terbaru dari Berita Muda Indonesia.';
     }
 
-    if (els.heroDate) {
+    if (
+      els.heroDate
+    ) {
+
       els.heroDate.textContent =
         fmtDate(
-          articleTime(article)
+          articleTime(
+            article
+          )
         );
     }
 
-    if (els.heroViews) {
+    if (
+      els.heroViews
+    ) {
+
       els.heroViews.textContent =
-        `${numberFormat(
-          article.views
-        )} views`;
+        article.views
+          ? `${
+              Number(
+                article.views
+              ).toLocaleString(
+                'id-ID'
+              )
+            } pembaca`
+          : 'Update terbaru';
     }
 
-    if (els.ticker) {
+    if (
+      els.ticker
+    ) {
+
       els.ticker.textContent =
         article.title ||
         'Berita terbaru';
     }
   }
 
-  /* =====================================================
-     COMPACT
-  ===================================================== */
+  /* =========================================================
+     COMPACT NEWS
+  ========================================================= */
 
   function renderCompact() {
-    if (!els.compact) {
+
+    if (
+      !els.compact
+    ) {
       return;
     }
 
@@ -629,67 +997,191 @@
       '';
 
     state.articles
-      .slice(1, 4)
-      .forEach(article => {
-        const button =
-          document.createElement(
-            'button'
+      .slice(
+        1,
+        4
+      )
+      .forEach(
+        article => {
+
+          const button =
+            document.createElement(
+              'button'
+            );
+
+          button.className =
+            'compact-card';
+
+          const image =
+            imageUrl(
+              article
+            );
+
+          button.innerHTML =
+            `
+            <div
+              class="compact-thumb"
+              ${
+                image
+                  ? `style="background-image:url('${escapeHtml(
+                      image
+                    )}')"`
+                  : ''
+              }
+            ></div>
+
+            <div class="compact-copy">
+
+              <span class="tag ghost">
+                ${escapeHtml(
+                  article.category ||
+                  'TERBARU'
+                )}
+              </span>
+
+              <h3>
+                ${escapeHtml(
+                  article.title ||
+                  'Berita terbaru'
+                )}
+              </h3>
+
+              <small>
+                ${escapeHtml(
+                  fmtDate(
+                    articleTime(
+                      article
+                    )
+                  )
+                )}
+                ·
+                ${escapeHtml(
+                  article.source ||
+                  'Berita Muda Indonesia'
+                )}
+              </small>
+
+            </div>
+            `;
+
+          button.addEventListener(
+            'click',
+
+            () =>
+              openArticle(
+                article.id,
+                article
+              )
           );
 
-        button.className =
-          'compact-card';
+          els.compact.appendChild(
+            button
+          );
+        }
+      );
+  }
 
-        const image =
-          imageUrl(article);
+  /* =========================================================
+     TRENDING
+  ========================================================= */
 
-        button.innerHTML = `
-          <div
-            class="compact-thumb"
+  async function loadTrending() {
+
+    try {
+
+      const data =
+        await fetchJson(
+          '/api/trending?limit=10'
+        );
+
+      state.trending =
+        Array.isArray(
+          data
+        )
+          ? data
+          : [];
+
+    } catch (
+      error
+    ) {
+
+      console.warn(
+        '[TRENDING]',
+        error.message
+      );
+
+      state.trending =
+        state.articles
+          .slice(
+            0,
+            10
+          );
+    }
+  }
+
+  function renderTrending() {
+
+    if (
+      !els.trending
+    ) {
+      return;
+    }
+
+    els.trending.innerHTML =
+      '';
+
+    const items =
+      (
+        state.trending.length
+          ? state.trending
+          : state.articles
+      )
+        .slice(
+          0,
+          5
+        );
+
+    items.forEach(
+      (
+        article,
+        index
+      ) => {
+
+        const item =
+          document.createElement(
+            'li'
+          );
+
+        item.innerHTML =
+          `
+          <span class="trend-number">
             ${
-              image
-                ? `style="background-image:url('${escapeHtml(
-                    image
-                  )}')"`
-                : ''
+              index +
+              1
             }
-          ></div>
+          </span>
 
-          <div class="compact-copy">
+          <button>
+            ${escapeHtml(
+              article.title ||
+              'Berita terbaru'
+            )}
+          </button>
 
-            <span class="tag ghost">
-              ${escapeHtml(
-                article.category ||
-                  'TERBARU'
-              )}
-            </span>
+          <span class="trend-up">
+            🔥
+          </span>
+          `;
 
-            <h3>
-              ${escapeHtml(
-                article.title ||
-                  'Berita terbaru'
-              )}
-            </h3>
-
-            <small>
-              ${escapeHtml(
-                fmtDate(
-                  articleTime(
-                    article
-                  )
-                )
-              )}
-              ·
-              ${escapeHtml(
-                article.source ||
-                  'Berita Muda'
-              )}
-            </small>
-
-          </div>
-        `;
+        const button =
+          $(
+            'button',
+            item
+          );
 
         button.addEventListener(
           'click',
+
           () =>
             openArticle(
               article.id,
@@ -697,107 +1189,40 @@
             )
         );
 
-        els.compact.appendChild(
-          button
+        els.trending.appendChild(
+          item
         );
-      });
+      }
+    );
 
     if (
-      !els.compact.children.length
+      !els.trending.children.length
     ) {
-      els.compact.innerHTML = `
-        <div class="compact-card">
 
-          <div class="compact-thumb"></div>
+      els.trending.innerHTML =
+        `
+        <li>
+          <button>
+            Trending akan muncul setelah berita tersedia
+          </button>
 
-          <div class="compact-copy">
-
-            <span class="tag ghost">
-              SMART FEED
-            </span>
-
-            <h3>
-              Artikel terbaru akan muncul di sini
-            </h3>
-
-            <small>
-              Menunggu sinkronisasi
-            </small>
-
-          </div>
-
-        </div>
-      `;
+          <span class="trend-up">
+            ·
+          </span>
+        </li>
+        `;
     }
   }
 
-  /* =====================================================
-     TRENDING
-  ===================================================== */
-
-  function renderTrending() {
-    if (!els.trending) {
-      return;
-    }
-
-    els.trending.innerHTML =
-      '';
-
-    state.articles
-      .slice(0, 5)
-      .forEach(
-        (
-          article,
-          index
-        ) => {
-          const item =
-            document.createElement(
-              'li'
-            );
-
-          item.innerHTML = `
-            <span class="trend-number">
-              ${index + 1}
-            </span>
-
-            <button>
-              ${escapeHtml(
-                article.title ||
-                  'Berita terbaru'
-              )}
-            </button>
-
-            <span class="trend-up">
-              ↗
-            </span>
-          `;
-
-          item
-            .querySelector(
-              'button'
-            )
-            .addEventListener(
-              'click',
-              () =>
-                openArticle(
-                  article.id,
-                  article
-                )
-            );
-
-          els.trending.appendChild(
-            item
-          );
-        }
-      );
-  }
-
-  /* =====================================================
-     ARTICLE LIST
-  ===================================================== */
+  /* =========================================================
+     RENDER ARTICLES
+  ========================================================= */
 
   function renderArticles() {
-    if (!els.grid) {
+
+    if (
+      !els.grid
+    ) {
       return;
     }
 
@@ -820,14 +1245,23 @@
     const count =
       state.articles.length;
 
-    if (els.count) {
+    if (
+      els.count
+    ) {
+
       els.count.textContent =
-        `${count} berita`;
+        `${
+          count
+        } berita`;
     }
 
-    if (els.clear) {
+    if (
+      els.clear
+    ) {
+
       els.clear.classList.toggle(
         'hidden',
+
         !(
           state.category ||
           state.query
@@ -835,92 +1269,148 @@
       );
     }
 
-    if (els.section) {
-      els.section.textContent =
+    if (
+      els.section
+    ) {
+
+      if (
         state.query
-          ? `Hasil Pencarian: ${state.query}`
-          : state.category
-            ? `Berita ${state.category
-                .toLowerCase()
-                .replace(
-                  /(^|\s)\S/g,
-                  character =>
-                    character.toUpperCase()
-                )}`
-            : 'Berita Terbaru';
+      ) {
+
+        els.section.textContent =
+          `Hasil Pencarian: ${
+            state.query
+          }`;
+
+      } else if (
+        state.category
+      ) {
+
+        els.section.textContent =
+          `Berita ${
+            state.category
+          }`;
+
+      } else {
+
+        els.section.textContent =
+          'Berita Terbaru';
+      }
     }
 
-    if (els.empty) {
+    if (
+      els.empty
+    ) {
+
       els.empty.classList.toggle(
         'hidden',
         count > 0
       );
     }
+
+    if (
+      !count &&
+      els.emptyTitle &&
+      els.emptyText
+    ) {
+
+      els.emptyTitle.textContent =
+        'Belum ada berita yang tersedia';
+
+      els.emptyText.textContent =
+        'Sistem sudah siap. Jalankan sinkronisasi RSS atau periksa sumber berita.';
+    }
   }
 
-  /* =====================================================
-     SYSTEM
-  ===================================================== */
+  /* =========================================================
+     LOAD SYSTEM
+  ========================================================= */
 
   async function loadSystem() {
+
     try {
-      const response =
-        await fetch(
-          '/api/system/config',
-          {
-            cache:
-              'no-store'
-          }
-        );
 
       const data =
-        await response.json();
+        await fetchJson(
+          '/api/system/config'
+        );
 
-      if (els.sourceStatus) {
+      if (
+        els.sourceStatus
+      ) {
+
         els.sourceStatus.textContent =
           data.supabaseConfigured
+
             ? 'Sumber data terhubung'
+
             : 'Mode konfigurasi';
       }
-    } catch (_) {
-      if (els.sourceStatus) {
+
+    } catch (
+      error
+    ) {
+
+      if (
+        els.sourceStatus
+      ) {
+
         els.sourceStatus.textContent =
           'Status sumber tidak tersedia';
       }
     }
   }
 
-  /* =====================================================
+  /* =========================================================
      LOAD ARTICLES
-  ===================================================== */
+  ========================================================= */
 
-  async function loadArticles({
-    silent = false
-  } = {}) {
+  async function loadArticles(
+    {
+      silent = false
+    } = {}
+  ) {
+
     if (
-      state.loading
+      state.loading &&
+      !silent
     ) {
       return;
     }
 
-    if (!silent) {
-      setLoading(true);
+    if (
+      !silent
+    ) {
+
+      setLoading(
+        true
+      );
     }
 
     const params =
-      new URLSearchParams({
-        limit:
-          '24'
-      });
+      new URLSearchParams();
 
-    if (state.category) {
+    params.set(
+      'limit',
+      String(
+        state.limit
+      )
+    );
+
+    if (
+      state.category
+    ) {
+
       params.set(
         'category',
         state.category
       );
     }
 
-    if (state.query) {
+    if (
+      state.query
+    ) {
+
       params.set(
         'q',
         state.query
@@ -928,50 +1418,48 @@
     }
 
     try {
-      const response =
-        await fetch(
-          `/api/articles?${params}`,
-          {
-            headers: {
-              Accept:
-                'application/json'
-            },
-
-            cache:
-              'no-store'
-          }
-        );
-
-      if (!response.ok) {
-        throw new Error(
-          `API ${response.status}`
-        );
-      }
 
       const data =
-        await response.json();
+        await fetchJson(
+          `/api/articles?${
+            params.toString()
+          }`
+        );
 
       state.articles =
-        Array.isArray(data)
+        Array.isArray(
+          data
+        )
           ? data
           : [];
 
       renderHero();
+
       renderCompact();
-      renderTrending();
+
       renderArticles();
 
+      await loadTrending();
+
+      renderTrending();
+
+      renderLiveUpdates();
+
       if (
-        state.articles.length &&
-        els.sourceStatus
+        els.sourceStatus &&
+        state.articles.length
       ) {
+
         els.sourceStatus.textContent =
           'Live data aktif';
       }
 
-    } catch (error) {
+    } catch (
+      error
+    ) {
 
       console.error(
+        '[ARTICLES]',
         error
       );
 
@@ -979,36 +1467,293 @@
         [];
 
       renderHero();
+
       renderCompact();
-      renderTrending();
+
       renderArticles();
 
-      if (els.sourceStatus) {
+      renderTrending();
+
+      if (
+        els.sourceStatus
+      ) {
+
         els.sourceStatus.textContent =
           'Koneksi perlu perhatian';
       }
 
-      if (els.emptyTitle) {
+      if (
+        els.emptyTitle
+      ) {
+
         els.emptyTitle.textContent =
-          'Koneksi berita belum berhasil';
+          'Berita belum berhasil dimuat';
       }
 
-      if (els.emptyText) {
+      if (
+        els.emptyText
+      ) {
+
         els.emptyText.textContent =
-          `Tidak dapat mengambil berita dari API: ${error.message}`;
+          `API berita bermasalah: ${
+            error.message
+          }`;
+      }
+
+      if (
+        !silent
+      ) {
+
+        toast(
+          'Belum bisa memuat berita. Periksa server.'
+        );
       }
 
     } finally {
-      setLoading(false);
+
+      if (
+        !silent
+      ) {
+
+        setLoading(
+          false
+        );
+      }
     }
   }
 
-  /* =====================================================
-     LIVE UPDATE
-  ===================================================== */
+  /* =========================================================
+     LOAD VIDEOS
+  ========================================================= */
+
+  async function loadVideos() {
+
+    try {
+
+      const data =
+        await fetchJson(
+          '/api/videos?limit=12'
+        );
+
+      state.videos =
+        Array.isArray(
+          data
+        )
+          ? data
+          : [];
+
+    } catch (
+      error
+    ) {
+
+      console.warn(
+        '[VIDEOS]',
+        error.message
+      );
+
+      state.videos =
+        [];
+    }
+
+    renderVideos();
+  }
+
+  /* =========================================================
+     VIDEO CARD
+  ========================================================= */
+
+  function createVideoCard(
+    video
+  ) {
+
+    const card =
+      document.createElement(
+        'article'
+      );
+
+    card.className =
+      'video-card';
+
+    const image =
+      imageUrl(
+        video
+      );
+
+    const duration =
+      video.duration ||
+      video.duration_text ||
+      '';
+
+    const source =
+      video.source ||
+      video.channel ||
+      'Berita Muda Indonesia';
+
+    card.innerHTML =
+      `
+      <div class="video-thumb">
+
+        ${
+          image
+
+            ? `
+              <img
+                src="${escapeHtml(
+                  image
+                )}"
+                alt="${escapeHtml(
+                  video.title ||
+                  'Video'
+                )}"
+                loading="lazy"
+              >
+              `
+
+            : `
+              <div class="video-placeholder">
+                VIDEO
+              </div>
+              `
+        }
+
+        <div class="video-play">
+          ▶
+        </div>
+
+        ${
+          duration
+
+            ? `
+              <span class="video-duration">
+                ${escapeHtml(
+                  duration
+                )}
+              </span>
+              `
+
+            : ''
+        }
+
+      </div>
+
+      <div class="video-info">
+
+        <span class="video-category">
+          ${escapeHtml(
+            video.category ||
+            'VIDEO'
+          )}
+        </span>
+
+        <h4>
+          ${escapeHtml(
+            video.title ||
+            'Video terbaru'
+          )}
+        </h4>
+
+        <p>
+          ${escapeHtml(
+            source
+          )}
+        </p>
+
+        <div class="video-meta">
+
+          <span>
+            👁️ ${
+              Number(
+                video.views ||
+                0
+              ).toLocaleString(
+                'id-ID'
+              )
+            }
+          </span>
+
+          <span>
+            ❤️ ${
+              Number(
+                video.likes ||
+                0
+              ).toLocaleString(
+                'id-ID'
+              )
+            }
+          </span>
+
+        </div>
+
+      </div>
+      `;
+
+    card.addEventListener(
+      'click',
+
+      () =>
+        openVideo(
+          video
+        )
+    );
+
+    return card;
+  }
+
+  /* =========================================================
+     RENDER VIDEOS
+  ========================================================= */
+
+  function renderVideos() {
+
+    if (
+      !els.videoGrid
+    ) {
+      return;
+    }
+
+    els.videoGrid.innerHTML =
+      '';
+
+    state.videos.forEach(
+      video =>
+        els.videoGrid.appendChild(
+          createVideoCard(
+            video
+          )
+        )
+    );
+
+    if (
+      !state.videos.length
+    ) {
+
+      els.videoGrid.innerHTML =
+        `
+        <div class="video-empty">
+
+          <strong>
+            Belum ada video terbaru
+          </strong>
+
+          <p>
+            Video akan muncul otomatis setelah
+            sumber video tersinkronisasi.
+          </p>
+
+        </div>
+        `;
+    }
+  }
+
+  /* =========================================================
+     LIVE UPDATES
+  ========================================================= */
 
   function renderLiveUpdates() {
-    if (!els.liveUpdates) {
+
+    if (
+      !els.liveUpdates
+    ) {
       return;
     }
 
@@ -1018,30 +1763,35 @@
     const items =
       state.articles.slice(
         0,
-        4
+        5
       );
 
     els.liveUpdates.innerHTML =
       '';
 
-    (
+    const data =
       items.length
+
         ? items
+
         : [
             {
               title:
-                'Sistem memantau pembaruan sumber berita secara berkala.'
+                'Sistem sedang memantau pembaruan sumber berita.'
             },
+
             {
               title:
                 'Data live akan masuk otomatis setelah sinkronisasi aktif.'
             }
-          ]
-    ).forEach(
+          ];
+
+    data.forEach(
       (
         article,
         index
       ) => {
+
         const row =
           document.createElement(
             'div'
@@ -1051,28 +1801,46 @@
           'live-update';
 
         const time =
-          new Date(
-            now.getTime() -
-            index *
-              7 *
-              60_000
-          );
+          articleTime(
+            article
+          )
 
-        row.innerHTML = `
+            ? new Date(
+                articleTime(
+                  article
+                )
+              )
+
+            : new Date(
+                now.getTime() -
+                index *
+                7 *
+                60_000
+              );
+
+        row.innerHTML =
+          `
           <time>
-            ${new Intl.DateTimeFormat(
-              'id-ID',
-              {
-                hour:
-                  '2-digit',
-                minute:
-                  '2-digit',
-                hour12:
-                  false,
-                timeZone:
-                  'Asia/Jakarta'
-              }
-            ).format(time)}
+            ${
+              new Intl.DateTimeFormat(
+                'id-ID',
+                {
+                  hour:
+                    '2-digit',
+
+                  minute:
+                    '2-digit',
+
+                  hour12:
+                    false,
+
+                  timeZone:
+                    'Asia/Jakarta'
+                }
+              ).format(
+                time
+              )
+            }
           </time>
 
           <p>
@@ -1080,7 +1848,22 @@
               article.title
             )}
           </p>
-        `;
+          `;
+
+        if (
+          article.id
+        ) {
+
+          row.addEventListener(
+            'click',
+
+            () =>
+              openArticle(
+                article.id,
+                article
+              )
+          );
+        }
 
         els.liveUpdates.appendChild(
           row
@@ -1089,228 +1872,59 @@
     );
   }
 
-  /* =====================================================
-     VIDEOS
-  ===================================================== */
+  /* =========================================================
+     ARTICLE CONTENT
+  ========================================================= */
 
-  async function loadVideos() {
-    if (!els.videoGrid) {
-      return;
-    }
-
-    try {
-      const response =
-        await fetch(
-          '/api/videos?limit=6',
-          {
-            headers: {
-              Accept:
-                'application/json'
-            },
-
-            cache:
-              'no-store'
-          }
-        );
-
-      if (!response.ok) {
-        throw new Error();
-      }
-
-      const data =
-        await response.json();
-
-      state.videos =
-        Array.isArray(data)
-          ? data
-          : [];
-
-    } catch (_) {
-      state.videos =
-        [];
-    }
-
-    els.videoGrid.innerHTML =
-      '';
-
-    state.videos
-      .slice(0, 4)
-      .forEach(video => {
-        const card =
-          document.createElement(
-            'button'
-          );
-
-        card.className =
-          'video-card';
-
-        const image =
-          imageUrl(video);
-
-        card.innerHTML = `
-          <div
-            class="video-thumb"
-            ${
-              image
-                ? `style="background-image:url('${escapeHtml(
-                    image
-                  )}')"`
-                : ''
-            }
-          ></div>
-
-          <div>
-
-            <h4>
-              ${escapeHtml(
-                video.title ||
-                  'Video terbaru'
-              )}
-            </h4>
-
-            <small>
-              ${escapeHtml(
-                video.category ||
-                  'VIDEO'
-              )}
-              ·
-              ${escapeHtml(
-                video.source ||
-                  'Berita Muda'
-              )}
-            </small>
-
-          </div>
-        `;
-
-        card.addEventListener(
-          'click',
-          () =>
-            openVideo(video)
-        );
-
-        els.videoGrid.appendChild(
-          card
-        );
-      });
+  function renderArticleContent(
+    article
+  ) {
 
     if (
-      !state.videos.length
+      article.content_html &&
+      String(
+        article.content_html
+      ).trim()
     ) {
-      els.videoGrid.innerHTML = `
-        <div class="video-empty">
-          Belum ada video published.
-        </div>
-      `;
-    }
-  }
 
-  /* =====================================================
-     RELATED ARTICLES
-  ===================================================== */
-
-  function relatedArticles(
-    article
-  ) {
-    return state.articles
-      .filter(
-        item =>
-          item.id !==
-          article.id
+      return String(
+        article.content_html
       )
-      .sort(
-        (
-          first,
-          second
-        ) => {
-          const firstScore =
-            first.category ===
-            article.category
-              ? 1
-              : 0;
-
-          const secondScore =
-            second.category ===
-            article.category
-              ? 1
-              : 0;
-
-          return (
-            secondScore -
-            firstScore
-          );
-        }
-      )
-      .slice(
-        0,
-        3
-      );
-  }
-
-  /* =====================================================
-     ADVERTISEMENT
-  ===================================================== */
-
-  function advertisementMarkup() {
-    return `
-      <aside class="article-ad-slot">
-
-        <span class="ad-label">
-          ADVERTISEMENT
-        </span>
-
-        <div class="article-ad-placeholder">
-
-          <strong>
-            Ruang Iklan
-          </strong>
-
-          <span>
-            Kampanye sponsor akan tampil di area ini
-          </span>
-
-        </div>
-
-      </aside>
-    `;
-  }
-
-  /* =====================================================
-     ARTICLE BODY
-  ===================================================== */
-
-  function buildArticleBody(
-    article
-  ) {
-    const raw =
-      article.content_html ||
-      article.content ||
-      '';
-
-    if (raw) {
-
-      if (
-        /<[^>]+>/.test(
-          raw
-        )
-      ) {
-        return safeHtml(
-          raw
+        .replace(
+          /<script[\s\S]*?<\/script>/gi,
+          ''
         );
-      }
+    }
 
-      return raw
+    if (
+      article.content &&
+      String(
+        article.content
+      ).trim()
+    ) {
+
+      return String(
+        article.content
+      )
         .split(
           /\n\s*\n/
+        )
+        .map(
+          paragraph =>
+            paragraph.trim()
         )
         .filter(
           Boolean
         )
         .map(
           paragraph =>
-            `<p>${escapeHtml(
-              paragraph
-            )}</p>`
+            `
+            <p>
+              ${escapeHtml(
+                paragraph
+              )}
+            </p>
+            `
         )
         .join(
           ''
@@ -1320,40 +1934,332 @@
     if (
       article.summary
     ) {
+
       return `
         <p>
           ${escapeHtml(
-            article.summary
+            stripHtml(
+              article.summary
+            )
           )}
         </p>
-      `;
+        `;
     }
 
     return `
-      <div class="article-no-content">
+      <p>
+        Isi artikel belum tersedia.
+      </p>
+      `;
+  }
 
-        <strong>
-          Naskah artikel belum tersedia
-        </strong>
+  /* =========================================================
+     SOURCE URL
+  ========================================================= */
 
-        <p>
-          Konten lengkap belum dimasukkan ke newsroom.
-        </p>
+  function getSourceUrl(
+    article
+  ) {
+
+    const candidate =
+      article.source_url ||
+      article.canonical_url ||
+      article.url ||
+      '';
+
+    if (
+      !candidate
+    ) {
+      return '';
+    }
+
+    try {
+
+      const url =
+        new URL(
+          candidate,
+          window.location.origin
+        );
+
+      if (
+        url.origin ===
+        window.location.origin
+      ) {
+        return '';
+      }
+
+      return url.href;
+
+    } catch (
+      error
+    ) {
+
+      return '';
+    }
+  }
+
+  /* =========================================================
+     ARTICLE ACTIONS
+  ========================================================= */
+
+  function articleActions(
+    article
+  ) {
+
+    return `
+      <div class="detail-actions">
+
+        <button
+          class="detail-action like-btn"
+          data-like-article="${escapeHtml(
+            article.id
+          )}"
+        >
+          ❤️
+          Suka
+        </button>
+
+        <button
+          class="detail-action share-btn"
+          data-share-article="${escapeHtml(
+            article.id
+          )}"
+        >
+          🔗
+          Bagikan
+        </button>
+
+        <button
+          class="detail-action copy-btn"
+          data-copy-article="${escapeHtml(
+            article.id
+          )}"
+        >
+          📋
+          Salin Link
+        </button>
 
       </div>
     `;
   }
 
-  /* =====================================================
-     ARTICLE DETAIL
-  ===================================================== */
+  /* =========================================================
+     BIND ARTICLE ACTIONS
+  ========================================================= */
+
+  function bindArticleActions(
+    article
+  ) {
+
+    const likeButton =
+      $(
+        `[data-like-article="${CSS.escape(
+          String(
+            article.id
+          )
+        )}"]`
+      );
+
+    if (
+      likeButton
+    ) {
+
+      likeButton.addEventListener(
+        'click',
+
+        async () => {
+
+          await post(
+            `/api/articles/${
+              encodeURIComponent(
+                article.id
+              )
+            }/like`
+          );
+
+          likeButton.classList.add(
+            'active'
+          );
+
+          likeButton.textContent =
+            '❤️ Disukai';
+
+          trackEvent(
+            'like',
+            'article',
+            article.id
+          );
+        }
+      );
+    }
+
+    const shareButton =
+      $(
+        `[data-share-article="${CSS.escape(
+          String(
+            article.id
+          )
+        )}"]`
+      );
+
+    if (
+      shareButton
+    ) {
+
+      shareButton.addEventListener(
+        'click',
+
+        async () => {
+
+          const url =
+            `${
+              window.location.origin
+            }/berita/${
+              encodeURIComponent(
+                article.id
+              )
+            }`;
+
+          if (
+            navigator.share
+          ) {
+
+            try {
+
+              await navigator.share(
+                {
+                  title:
+                    article.title,
+
+                  text:
+                    article.summary ||
+                    article.title,
+
+                  url
+                }
+              );
+
+            } catch (
+              error
+            ) {
+
+              if (
+                error?.name !==
+                'AbortError'
+              ) {
+
+                console.warn(
+                  error
+                );
+              }
+            }
+
+          } else {
+
+            try {
+
+              await navigator.clipboard.writeText(
+                url
+              );
+
+              toast(
+                'Link berhasil disalin',
+                'success'
+              );
+
+            } catch (
+              error
+            ) {
+
+              window.prompt(
+                'Salin link:',
+                url
+              );
+            }
+          }
+
+          await post(
+            `/api/articles/${
+              encodeURIComponent(
+                article.id
+              )
+            }/share`
+          );
+
+          trackEvent(
+            'share',
+            'article',
+            article.id
+          );
+        }
+      );
+    }
+
+    const copyButton =
+      $(
+        `[data-copy-article="${CSS.escape(
+          String(
+            article.id
+          )
+        )}"]`
+      );
+
+    if (
+      copyButton
+    ) {
+
+      copyButton.addEventListener(
+        'click',
+
+        async () => {
+
+          const url =
+            `${
+              window.location.origin
+            }/berita/${
+              encodeURIComponent(
+                article.id
+              )
+            }`;
+
+          try {
+
+            await navigator.clipboard.writeText(
+              url
+            );
+
+            toast(
+              'Link berhasil disalin',
+              'success'
+            );
+
+          } catch (
+            error
+          ) {
+
+            window.prompt(
+              'Salin link:',
+              url
+            );
+          }
+        }
+      );
+    }
+  }
+
+  /* =========================================================
+     OPEN ARTICLE
+  ========================================================= */
 
   async function openArticle(
     id,
-    fallback
+    fallback = null
   ) {
 
-    if (!els.modal) {
+    if (
+      !els.modal ||
+      !els.modalBody
+    ) {
       return;
     }
 
@@ -1364,8 +2270,9 @@
     document.body.style.overflow =
       'hidden';
 
-    els.modalBody.innerHTML = `
-      <div class="article-loading">
+    els.modalBody.innerHTML =
+      `
+      <div class="modal-content">
 
         <span class="eyebrow">
           MEMUAT ARTIKEL
@@ -1376,50 +2283,44 @@
         </h2>
 
       </div>
-    `;
+      `;
 
     let article =
       fallback;
 
-    if (id) {
-      try {
+    try {
 
-        const response =
-          await fetch(
-            `/api/articles/${encodeURIComponent(
-              id
-            )}`,
-            {
-              headers: {
-                Accept:
-                  'application/json'
-              },
-
-              cache:
-                'no-store'
-            }
-          );
-
-        if (
-          response.ok
-        ) {
-          article =
-            await response.json();
-        }
-
-      } catch (
-        error
+      if (
+        id
       ) {
-        console.error(
-          error
-        );
+
+        article =
+          await fetchJson(
+            `/api/articles/${
+              encodeURIComponent(
+                id
+              )
+            }`
+          );
       }
+
+    } catch (
+      error
+    ) {
+
+      console.warn(
+        '[ARTICLE DETAIL]',
+        error.message
+      );
     }
 
-    if (!article) {
+    if (
+      !article
+    ) {
 
-      els.modalBody.innerHTML = `
-        <div class="article-loading">
+      els.modalBody.innerHTML =
+        `
+        <div class="modal-content">
 
           <span class="eyebrow">
             DATA BELUM TERSEDIA
@@ -1434,892 +2335,420 @@
           </p>
 
         </div>
-      `;
+        `;
 
       return;
     }
 
-    await trackEvent({
-      event_type:
-        'view',
+    state.currentArticle =
+      article;
 
-      content_type:
-        'article',
-
-      content_id:
-        article.id
-    });
+    document.title =
+      `${
+        article.title ||
+        'Berita'
+      } | Berita Muda Indonesia`;
 
     const image =
-      imageUrl(article);
-
-    const content =
-      buildArticleBody(
+      imageUrl(
         article
       );
 
-    const tags =
-      Array.isArray(
-        article.tags
-      )
-        ? article.tags
-        : [];
-
-    const related =
-      relatedArticles(
+    const body =
+      renderArticleContent(
         article
       );
 
     const sourceUrl =
-      article.source_url ||
-      article.url ||
-      '';
+      getSourceUrl(
+        article
+      );
 
-    const articleUrl =
-      `${window.location.origin}/berita/${article.id}`;
+    els.modalBody.innerHTML =
+      `
+      ${
+        image
 
-    const author =
-      article.author_name ||
-      article.source ||
-      'Redaksi Berita Muda Indonesia';
+          ? `
+            <img
+              class="modal-hero"
+              src="${escapeHtml(
+                image
+              )}"
+              alt="${escapeHtml(
+                article.title ||
+                'Berita'
+              )}"
+            >
+            `
 
-    const updated =
-      article.updated_at &&
-      article.published_at &&
-      article.updated_at !==
-        article.published_at;
+          : ''
+      }
 
-    els.modalBody.innerHTML = `
+      <div class="modal-content">
 
-      <article
-        class="premium-article"
-        data-article-id="${escapeHtml(
-          article.id
-        )}"
-      >
+        <div class="detail-category-row">
 
-        <header class="premium-article-header">
-
-          <div class="article-breadcrumb">
-
-            <span>
-              ${escapeHtml(
-                article.category ||
-                  'BERITA'
-              )}
-            </span>
-
-            <span>
-              Berita Muda Indonesia
-            </span>
-
-          </div>
-
-          <span class="premium-category">
+          <span class="eyebrow">
             ${escapeHtml(
               article.category ||
-                'TERBARU'
+              'BERITA'
             )}
           </span>
 
-          <h1>
-            ${escapeHtml(
-              article.title ||
-                'Berita terbaru'
-            )}
-          </h1>
-
           ${
-            article.summary
+            article.breaking
+
               ? `
-                <p class="premium-summary">
-                  ${escapeHtml(
-                    stripHtml(
-                      article.summary
-                    )
-                  )}
-                </p>
-              `
+                <span class="breaking-mini">
+                  BREAKING
+                </span>
+                `
+
               : ''
           }
 
-          <div class="article-byline">
+        </div>
 
-            <div class="author-block">
+        <h2>
+          ${escapeHtml(
+            article.title ||
+            'Berita terbaru'
+          )}
+        </h2>
 
-              <div class="author-avatar">
-                ${escapeHtml(
-                  author
-                    .charAt(0)
-                    .toUpperCase()
-                )}
-              </div>
+        <div class="detail-meta">
 
-              <div>
+          <span>
+            ${
+              escapeHtml(
+                article.author_name ||
+                article.source ||
+                'Berita Muda Indonesia'
+              )
+            }
+          </span>
 
-                <strong>
-                  ${escapeHtml(
-                    author
-                  )}
-                </strong>
-
-                <span>
-                  ${escapeHtml(
-                    article.source ||
-                      'Berita Muda Indonesia'
-                  )}
-                </span>
-
-              </div>
-
-            </div>
-
-            <div class="article-date-block">
-
-              <span>
-                ${escapeHtml(
-                  absoluteDate(
-                    articleTime(
-                      article
-                    )
-                  )
-                )}
-              </span>
-
-              ${
-                updated
-                  ? `
-                    <small>
-                      Diperbarui
-                      ${escapeHtml(
-                        absoluteDate(
-                          article.updated_at
-                        )
-                      )}
-                    </small>
-                  `
-                  : ''
-              }
-
-            </div>
-
-          </div>
-
-          <div class="article-stats">
-
-            <span>
-              👁
-              ${numberFormat(
-                article.views
-              )}
-              dilihat
-            </span>
-
-            <span>
-              ⏱
-              ${escapeHtml(
-                readingTime(
+          <span>
+            ${escapeHtml(
+              fmtDate(
+                articleTime(
                   article
                 )
-              )}
-            </span>
+              )
+            )}
+          </span>
 
-          </div>
+          ${
+            article.reading_minutes
 
-          <div class="article-actions">
-
-            <button
-              class="article-action like-action"
-              data-action="like"
-            >
-
-              <span>
-                ♡
-              </span>
-
-              <span>
-                Suka
-              </span>
-
-              <b
-                id="articleLikeCount"
-              >
-                ${numberFormat(
-                  article.likes
-                )}
-              </b>
-
-            </button>
-
-            <button
-              class="article-action"
-              data-action="share"
-            >
-
-              <span>
-                ↗
-              </span>
-
-              Bagikan
-
-            </button>
-
-            <button
-              class="article-action"
-              data-action="whatsapp"
-            >
-
-              <span>
-                ◉
-              </span>
-
-              WhatsApp
-
-            </button>
-
-            <button
-              class="article-action"
-              data-action="copy"
-            >
-
-              <span>
-                ⧉
-              </span>
-
-              Salin Link
-
-            </button>
-
-          </div>
-
-        </header>
-
-        ${
-          image
-            ? `
-              <figure class="premium-hero">
-
-                <img
-                  src="${escapeHtml(
-                    image
-                  )}"
-
-                  alt="${escapeHtml(
-                    article.title ||
-                      'Berita'
-                  )}"
-                >
-
-                <figcaption>
-
-                  ${escapeHtml(
-                    article.image_caption ||
-                      article.source ||
-                      'Berita Muda Indonesia'
-                  )}
-
-                </figcaption>
-
-              </figure>
-            `
-            : ''
-        }
-
-        <div class="article-reading-layout">
-
-          <aside class="article-social-rail">
-
-            <button
-              data-action="like"
-              title="Suka"
-            >
-              ♡
-            </button>
-
-            <button
-              data-action="share"
-              title="Bagikan"
-            >
-              ↗
-            </button>
-
-            <button
-              data-action="copy"
-              title="Salin link"
-            >
-              ⧉
-            </button>
-
-          </aside>
-
-          <div class="article-reading-content">
-
-            <div
-              class="article-html premium-prose"
-            >
-
-              ${content}
-
-            </div>
-
-            ${advertisementMarkup()}
-
-            ${
-              tags.length
-                ? `
-                  <section class="article-tags-section">
-
-                    <span>
-                      TOPIK
-                    </span>
-
-                    <div class="article-tags">
-
-                      ${tags
-                        .map(
-                          tag =>
-                            `
-                              <button
-                                data-tag="${escapeHtml(
-                                  tag
-                                )}"
-                              >
-                                #${escapeHtml(
-                                  tag
-                                )}
-                              </button>
-                            `
-                        )
-                        .join(
-                          ''
-                        )}
-
-                    </div>
-
-                  </section>
+              ? `
+                <span>
+                  ${
+                    escapeHtml(
+                      article.reading_minutes
+                    )
+                  }
+                  menit baca
+                </span>
                 `
-                : ''
-            }
 
-            <section class="article-source-card">
-
-              <span class="source-label">
-                INFORMASI SUMBER
-              </span>
-
-              <strong>
-                ${escapeHtml(
-                  article.source ||
-                    'Berita Muda Indonesia'
-                )}
-              </strong>
-
-              ${
-                sourceUrl
-                  ? `
-                    <a
-                      href="${escapeHtml(
-                        sourceUrl
-                      )}"
-
-                      target="_blank"
-
-                      rel="noopener noreferrer"
-                    >
-
-                      Buka sumber informasi ↗
-
-                    </a>
-                  `
-                  : ''
-              }
-
-            </section>
-
-          </div>
+              : ''
+          }
 
         </div>
 
         ${
-          related.length
+          article.summary
+
             ? `
-              <section class="related-section">
+              <p class="summary">
+                ${escapeHtml(
+                  stripHtml(
+                    article.summary
+                  )
+                )}
+              </p>
+              `
 
-                <div class="related-heading">
-
-                  <span>
-                    LANJUT BACA
-                  </span>
-
-                  <h2>
-                    Berita Terkait
-                  </h2>
-
-                </div>
-
-                <div class="related-grid">
-
-                  ${related
-                    .map(
-                      item =>
-                        `
-                          <button
-                            class="related-card"
-                            data-related="${escapeHtml(
-                              item.id
-                            )}"
-                          >
-
-                            ${
-                              imageUrl(
-                                item
-                              )
-                                ? `
-                                  <div
-                                    class="related-image"
-                                    style="background-image:url('${escapeHtml(
-                                      imageUrl(
-                                        item
-                                      )
-                                    )}')"
-                                  ></div>
-                                `
-                                : ''
-                            }
-
-                            <div>
-
-                              <span>
-                                ${escapeHtml(
-                                  item.category ||
-                                    'BERITA'
-                                )}
-                              </span>
-
-                              <h3>
-                                ${escapeHtml(
-                                  item.title ||
-                                    'Berita terbaru'
-                                )}
-                              </h3>
-
-                              <small>
-                                ${escapeHtml(
-                                  readingTime(
-                                    item
-                                  )
-                                )}
-                              </small>
-
-                            </div>
-
-                          </button>
-                        `
-                    )
-                    .join(
-                      ''
-                    )}
-
-                </div>
-
-              </section>
-            `
             : ''
         }
 
-      </article>
-    `;
+        ${articleActions(
+          article
+        )}
+
+        <div class="article-html">
+
+          ${body}
+
+        </div>
+
+        ${
+          sourceUrl
+
+            ? `
+              <div class="source-box">
+
+                <small>
+                  SUMBER BERITA
+                </small>
+
+                <a
+                  href="${escapeHtml(
+                    sourceUrl
+                  )}"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  ${escapeHtml(
+                    article.source ||
+                    'Baca sumber asli'
+                  )}
+                  ↗
+                </a>
+
+              </div>
+              `
+
+            : ''
+        }
+
+      </div>
+      `;
 
     bindArticleActions(
-      article,
-      articleUrl
-    );
-
-    startArticleReadTracking(
       article
     );
+
+    post(
+      `/api/articles/${
+        encodeURIComponent(
+          article.id
+        )
+      }/view`
+    );
+
+    trackEvent(
+      'view',
+      'article',
+      article.id
+    );
+
+    updateUrl(
+      'article',
+      article.id
+    );
   }
 
-  /* =====================================================
-     ARTICLE INTERACTION
-  ===================================================== */
+  /* =========================================================
+     VIDEO URL
+  ========================================================= */
 
-  function bindArticleActions(
-    article,
-    articleUrl
+  function getVideoUrl(
+    video
   ) {
 
-    const root =
-      els.modalBody;
-
-    if (!root) {
-      return;
-    }
-
-    const likeButtons =
-      $$(
-        '[data-action="like"]',
-        root
-      );
-
-    const shareButtons =
-      $$(
-        '[data-action="share"]',
-        root
-      );
-
-    const whatsappButtons =
-      $$(
-        '[data-action="whatsapp"]',
-        root
-      );
-
-    const copyButtons =
-      $$(
-        '[data-action="copy"]',
-        root
-      );
-
-    const relatedButtons =
-      $$(
-        '[data-related]',
-        root
-      );
-
-    const tagButtons =
-      $$(
-        '[data-tag]',
-        root
-      );
-
-    let liked =
-      localStorage.getItem(
-        `bmi-liked-${article.id}`
-      ) === 'true';
-
-    function updateLikeUI() {
-
-      likeButtons.forEach(
-        button => {
-          button.classList.toggle(
-            'active',
-            liked
-          );
-        }
-      );
-    }
-
-    updateLikeUI();
-
-    likeButtons.forEach(
-      button =>
-        button.addEventListener(
-          'click',
-          async () => {
-
-            if (
-              liked
-            ) {
-              toast(
-                'Anda sudah menyukai artikel ini.'
-              );
-
-              return;
-            }
-
-            liked =
-              true;
-
-            localStorage.setItem(
-              `bmi-liked-${article.id}`,
-              'true'
-            );
-
-            updateLikeUI();
-
-            article.likes =
-              Number(
-                article.likes ||
-                  0
-              ) +
-              1;
-
-            const count =
-              $('#articleLikeCount');
-
-            if (count) {
-              count.textContent =
-                numberFormat(
-                  article.likes
-                );
-            }
-
-            await trackEvent({
-              event_type:
-                'like',
-
-              content_type:
-                'article',
-
-              content_id:
-                article.id
-            });
-
-            toast(
-              'Terima kasih atas dukungan Anda.',
-              'success'
-            );
-
-          }
-        )
-    );
-
-    shareButtons.forEach(
-      button =>
-        button.addEventListener(
-          'click',
-          async () => {
-
-            await trackEvent({
-              event_type:
-                'share',
-
-              content_type:
-                'article',
-
-              content_id:
-                article.id
-            });
-
-            const shareData = {
-              title:
-                article.title,
-
-              text:
-                article.summary ||
-                article.title,
-
-              url:
-                articleUrl
-            };
-
-            try {
-
-              if (
-                navigator.share
-              ) {
-                await navigator.share(
-                  shareData
-                );
-              } else {
-                await navigator.clipboard.writeText(
-                  articleUrl
-                );
-
-                toast(
-                  'Link artikel disalin.'
-                );
-              }
-
-            } catch (_) {
-              /* user membatalkan share */
-            }
-
-          }
-        )
-    );
-
-    whatsappButtons.forEach(
-      button =>
-        button.addEventListener(
-          'click',
-          async () => {
-
-            await trackEvent({
-              event_type:
-                'share',
-
-              content_type:
-                'article',
-
-              content_id:
-                article.id
-            });
-
-            const message =
-              `${article.title}\n\n${articleUrl}`;
-
-            window.open(
-              `https://wa.me/?text=${encodeURIComponent(
-                message
-              )}`,
-              '_blank',
-              'noopener'
-            );
-
-          }
-        )
-    );
-
-    copyButtons.forEach(
-      button =>
-        button.addEventListener(
-          'click',
-          async () => {
-
-            try {
-
-              await navigator.clipboard.writeText(
-                articleUrl
-              );
-
-              await trackEvent({
-                event_type:
-                  'share',
-
-                content_type:
-                  'article',
-
-                content_id:
-                  article.id
-              });
-
-              toast(
-                'Link artikel berhasil disalin.',
-                'success'
-              );
-
-            } catch (_) {
-
-              toast(
-                'Tidak dapat menyalin link.'
-              );
-
-            }
-
-          }
-        )
-    );
-
-    relatedButtons.forEach(
-      button =>
-        button.addEventListener(
-          'click',
-          () => {
-
-            const related =
-              state.articles.find(
-                item =>
-                  item.id ===
-                  button.dataset.related
-              );
-
-            if (
-              related
-            ) {
-              openArticle(
-                related.id,
-                related
-              );
-            }
-
-          }
-        )
-    );
-
-    tagButtons.forEach(
-      button =>
-        button.addEventListener(
-          'click',
-          () => {
-
-            const tag =
-              button.dataset.tag;
-
-            closeModal();
-
-            state.query =
-              tag;
-
-            if (els.search) {
-              els.search.value =
-                tag;
-            }
-
-            activateCategory(
-              ''
-            );
-
-            loadArticles();
-
-            setTimeout(
-              () =>
-                els.section?.scrollIntoView(
-                  {
-                    behavior:
-                      'smooth'
-                  }
-                ),
-              250
-            );
-
-          }
-        )
+    return (
+      video.video_url ||
+      video.embed_url ||
+      video.url ||
+      video.youtube_url ||
+      ''
     );
   }
 
-  /* =====================================================
-     READ ANALYTICS
-  ===================================================== */
+  /* =========================================================
+     VIDEO EMBED
+  ========================================================= */
 
-  function startArticleReadTracking(
-    article
+  function createVideoPlayer(
+    video
+  ) {
+
+    const source =
+      getVideoUrl(
+        video
+      );
+
+    const image =
+      imageUrl(
+        video
+      );
+
+    if (
+      !source
+    ) {
+
+      return image
+
+        ? `
+          <img
+            class="modal-hero"
+            src="${escapeHtml(
+              image
+            )}"
+            alt="${escapeHtml(
+              video.title ||
+              'Video'
+            )}"
+          >
+          `
+
+        : `
+          <div class="video-player-empty">
+            VIDEO
+          </div>
+          `;
+    }
+
+    const lower =
+      source.toLowerCase();
+
+    if (
+      lower.includes(
+        'youtube.com'
+      ) ||
+      lower.includes(
+        'youtu.be'
+      )
+    ) {
+
+      let videoId =
+        '';
+
+      try {
+
+        const url =
+          new URL(
+            source
+          );
+
+        if (
+          url.hostname.includes(
+            'youtu.be'
+          )
+        ) {
+
+          videoId =
+            url.pathname
+              .split(
+                '/'
+              )
+              .filter(
+                Boolean
+              )[0];
+
+        } else {
+
+          videoId =
+            url.searchParams.get(
+              'v'
+            ) ||
+            '';
+        }
+
+      } catch (
+        error
+      ) {
+
+        videoId =
+          '';
+      }
+
+      if (
+        videoId
+      ) {
+
+        return `
+          <div class="video-player">
+
+            <iframe
+              src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(
+                videoId
+              )}"
+              title="${escapeHtml(
+                video.title ||
+                'Video'
+              )}"
+              allow="
+                accelerometer;
+                autoplay;
+                clipboard-write;
+                encrypted-media;
+                gyroscope;
+                picture-in-picture
+              "
+              allowfullscreen
+            ></iframe>
+
+          </div>
+          `;
+      }
+    }
+
+    if (
+      /\.(mp4|webm|ogg)(\?|$)/i
+        .test(
+          source
+        )
+    ) {
+
+      return `
+        <video
+          controls
+          playsinline
+          poster="${escapeHtml(
+            image
+          )}"
+          src="${escapeHtml(
+            source
+          )}"
+        ></video>
+        `;
+    }
+
+    return `
+      <div class="video-player">
+
+        <iframe
+          src="${escapeHtml(
+            source
+          )}"
+          title="${escapeHtml(
+            video.title ||
+            'Video'
+          )}"
+          allowfullscreen
+        ></iframe>
+
+      </div>
+      `;
+  }
+
+  /* =========================================================
+     OPEN VIDEO
+  ========================================================= */
+
+  async function openVideo(
+    video
   ) {
 
     if (
-      state.articleReadTimers.has(
-        article.id
-      )
+      !video
     ) {
       return;
     }
 
-    const timer =
-      setTimeout(
-        async () => {
-
-          await trackEvent({
-            event_type:
-              'article_read',
-
-            content_type:
-              'article',
-
-            content_id:
-              article.id
-          });
-
-        },
-        15_000
-      );
-
-    state.articleReadTimers.set(
-      article.id,
-      timer
-    );
-  }
-
-  /* =====================================================
-     VIDEO
-  ===================================================== */
-
-  function openVideo(
-    video
-  ) {
-
-    if (!els.modal) {
+    if (
+      !els.modal ||
+      !els.modalBody
+    ) {
       return;
     }
+
+    state.currentVideo =
+      video;
 
     els.modal.classList.remove(
       'hidden'
@@ -2328,268 +2757,750 @@
     document.body.style.overflow =
       'hidden';
 
-    const source =
-      video.video_url;
+    const player =
+      createVideoPlayer(
+        video
+      );
 
-    const image =
-      imageUrl(video);
-
-    els.modalBody.innerHTML = `
-      <div class="video-modal-content">
+    els.modalBody.innerHTML =
+      `
+      <div class="modal-content video-detail">
 
         <span class="eyebrow">
-          VIDEO
+          ${escapeHtml(
+            video.category ||
+            'VIDEO'
+          )}
         </span>
 
         <h2>
           ${escapeHtml(
             video.title ||
-              'Video terbaru'
+            'Video terbaru'
           )}
         </h2>
 
+        <div class="detail-meta">
+
+          <span>
+            ${escapeHtml(
+              video.source ||
+              video.channel ||
+              'Berita Muda Indonesia'
+            )}
+          </span>
+
+          <span>
+            ${escapeHtml(
+              fmtDate(
+                articleTime(
+                  video
+                )
+              )
+            )}
+          </span>
+
+        </div>
+
+        <div class="video-player-wrap">
+
+          ${player}
+
+        </div>
+
         ${
-          source
+          video.description ||
+          video.summary
+
             ? `
-              <video
-                controls
-                playsinline
-                poster="${escapeHtml(
-                  image
-                )}"
-
-                src="${escapeHtml(
-                  source
-                )}"
-              ></video>
-            `
-            : image
-              ? `
-                <img
-                  class="modal-hero"
-                  src="${escapeHtml(
-                    image
-                  )}"
-
-                  alt="${escapeHtml(
-                    video.title
-                  )}"
-                >
+              <p class="summary">
+                ${escapeHtml(
+                  stripHtml(
+                    video.description ||
+                    video.summary
+                  )
+                )}
+              </p>
               `
-              : ''
+
+            : ''
         }
 
-        <p class="summary">
-          ${escapeHtml(
-            video.description ||
-              'Informasi video belum tersedia.'
-          )}
-        </p>
+        <div class="detail-actions">
+
+          <button
+            class="detail-action"
+            id="videoLikeBtn"
+          >
+            ❤️ Suka
+          </button>
+
+          <button
+            class="detail-action"
+            id="videoShareBtn"
+          >
+            🔗 Bagikan
+          </button>
+
+        </div>
 
       </div>
-    `;
+      `;
 
-    trackEvent({
-      event_type:
-        'video_play',
+    bindVideoActions(
+      video
+    );
 
-      content_type:
+    if (
+      video.id
+    ) {
+
+      post(
+        `/api/videos/${
+          encodeURIComponent(
+            video.id
+          )
+        }/view`
+      );
+
+      trackEvent(
+        'view',
         'video',
-
-      content_id:
         video.id
-    });
+      );
+    }
+
+    updateUrl(
+      'video',
+      video.id
+    );
   }
 
-  /* =====================================================
+  /* =========================================================
+     VIDEO ACTIONS
+  ========================================================= */
+
+  function bindVideoActions(
+    video
+  ) {
+
+    const likeButton =
+      $('#videoLikeBtn');
+
+    const shareButton =
+      $('#videoShareBtn');
+
+    if (
+      likeButton &&
+      video.id
+    ) {
+
+      likeButton.addEventListener(
+        'click',
+
+        async () => {
+
+          await post(
+            `/api/videos/${
+              encodeURIComponent(
+                video.id
+              )
+            }/like`
+          );
+
+          likeButton.textContent =
+            '❤️ Disukai';
+
+          likeButton.classList.add(
+            'active'
+          );
+        }
+      );
+    }
+
+    if (
+      shareButton &&
+      video.id
+    ) {
+
+      shareButton.addEventListener(
+        'click',
+
+        async () => {
+
+          const url =
+            `${
+              window.location.origin
+            }/video/${
+              encodeURIComponent(
+                video.id
+              )
+            }`;
+
+          if (
+            navigator.share
+          ) {
+
+            try {
+
+              await navigator.share(
+                {
+                  title:
+                    video.title,
+
+                  text:
+                    video.description ||
+                    video.title,
+
+                  url
+                }
+              );
+
+            } catch (
+              error
+            ) {
+
+              if (
+                error?.name !==
+                'AbortError'
+              ) {
+
+                console.warn(
+                  error
+                );
+              }
+            }
+
+          } else {
+
+            try {
+
+              await navigator.clipboard.writeText(
+                url
+              );
+
+              toast(
+                'Link video disalin',
+                'success'
+              );
+
+            } catch (
+              error
+            ) {
+
+              window.prompt(
+                'Salin link video:',
+                url
+              );
+            }
+          }
+
+          await post(
+            `/api/videos/${
+              encodeURIComponent(
+                video.id
+              )
+            }/share`
+          );
+
+          trackEvent(
+            'share',
+            'video',
+            video.id
+          );
+        }
+      );
+    }
+  }
+
+  /* =========================================================
      CLOSE MODAL
-  ===================================================== */
+  ========================================================= */
 
   function closeModal() {
 
-    els.modal?.classList.add(
-      'hidden'
-    );
+    if (
+      els.modal
+    ) {
+
+      els.modal.classList.add(
+        'hidden'
+      );
+    }
 
     document.body.style.overflow =
       '';
+
+    state.currentArticle =
+      null;
+
+    state.currentVideo =
+      null;
+
+    const url =
+      new URL(
+        window.location.href
+      );
+
+    url.searchParams.delete(
+      'article'
+    );
+
+    url.searchParams.delete(
+      'video'
+    );
+
+    window.history.replaceState(
+      {},
+      '',
+      url.pathname +
+      (
+        url.search
+          ? url.search
+          : ''
+      )
+    );
   }
 
-  function scrollToVideo() {
-    $('#videoPanel')?.scrollIntoView(
-      {
-        behavior:
-          'smooth',
+  /* =========================================================
+     URL
+  ========================================================= */
 
-        block:
-          'start'
+  function updateUrl(
+    type,
+    id
+  ) {
+
+    if (
+      !id
+    ) {
+      return;
+    }
+
+    const url =
+      new URL(
+        window.location.href
+      );
+
+    url.searchParams.delete(
+      type === 'article'
+        ? 'video'
+        : 'article'
+    );
+
+    url.searchParams.set(
+      type,
+      id
+    );
+
+    window.history.replaceState(
+      {},
+      '',
+      url.pathname +
+      url.search
+    );
+  }
+
+  /* =========================================================
+     VIDEO SCROLL
+  ========================================================= */
+
+  function scrollToVideo() {
+
+    const panel =
+      $('#videoPanel');
+
+    if (
+      panel
+    ) {
+
+      panel.scrollIntoView(
+        {
+          behavior:
+            'smooth',
+
+          block:
+            'start'
+        }
+      );
+    }
+  }
+
+  /* =========================================================
+     OPEN DETAIL FROM URL
+  ========================================================= */
+
+  async function openFromUrl() {
+
+    const path =
+      window.location.pathname;
+
+    const params =
+      new URLSearchParams(
+        window.location.search
+      );
+
+    let articleId =
+      params.get(
+        'article'
+      );
+
+    let videoId =
+      params.get(
+        'video'
+      );
+
+    if (
+      path.startsWith(
+        '/berita/'
+      )
+    ) {
+
+      articleId =
+        decodeURIComponent(
+          path.split(
+            '/'
+          ).pop()
+        );
+    }
+
+    if (
+      path.startsWith(
+        '/video/'
+      )
+    ) {
+
+      videoId =
+        decodeURIComponent(
+          path.split(
+            '/'
+          ).pop()
+        );
+    }
+
+    if (
+      articleId
+    ) {
+
+      await openArticle(
+        articleId
+      );
+
+      return;
+    }
+
+    if (
+      videoId
+    ) {
+
+      let video =
+        state.videos.find(
+          item =>
+            String(
+              item.id
+            ) ===
+            String(
+              videoId
+            )
+        );
+
+      if (
+        !video
+      ) {
+
+        try {
+
+          video =
+            await fetchJson(
+              `/api/videos/${
+                encodeURIComponent(
+                  videoId
+                )
+              }`
+            );
+
+        } catch (
+          error
+        ) {
+
+          console.warn(
+            error
+          );
+        }
+      }
+
+      if (
+        video
+      ) {
+
+        openVideo(
+          video
+        );
+      }
+    }
+  }
+
+  /* =========================================================
+     EVENT LISTENERS
+  ========================================================= */
+
+  if (
+    els.heroOpen
+  ) {
+
+    els.heroOpen.addEventListener(
+      'click',
+
+      () => {
+
+        if (
+          state.heroId
+        ) {
+
+          openArticle(
+            state.heroId,
+            state.articles[0]
+          );
+        }
       }
     );
   }
 
-  /* =====================================================
-     EVENTS
-  ===================================================== */
+  if (
+    els.refresh
+  ) {
 
-  els.heroOpen?.addEventListener(
-    'click',
-    () =>
-      openArticle(
-        state.heroId,
-        state.articles[0]
-      )
-  );
+    els.refresh.addEventListener(
+      'click',
 
-  els.refresh?.addEventListener(
-    'click',
-    async () => {
+      async () => {
 
-      await loadArticles();
-
-      renderLiveUpdates();
-
-      toast(
-        'Pembaruan selesai.',
-        'success'
-      );
-
-    }
-  );
-
-  els.emptyRefresh?.addEventListener(
-    'click',
-    () =>
-      loadArticles()
-  );
-
-  els.form?.addEventListener(
-    'submit',
-    event => {
-
-      event.preventDefault();
-
-      state.query =
-        els.search.value.trim();
-
-      activateCategory(
-        ''
-      );
-
-      loadArticles();
-
-    }
-  );
-
-  els.nav?.addEventListener(
-    'click',
-    event => {
-
-      const button =
-        event.target.closest(
-          '[data-category]'
+        await Promise.all([
+          loadArticles(),
+          loadVideos()
         );
 
-      if (!button) {
-        return;
+        toast(
+          'Pembaruan selesai',
+          'success'
+        );
       }
+    );
+  }
 
-      state.query =
-        '';
+  if (
+    els.emptyRefresh
+  ) {
 
-      if (els.search) {
-        els.search.value =
+    els.emptyRefresh.addEventListener(
+      'click',
+
+      () =>
+        loadArticles()
+    );
+  }
+
+  if (
+    els.form
+  ) {
+
+    els.form.addEventListener(
+      'submit',
+
+      event => {
+
+        event.preventDefault();
+
+        state.query =
+          els.search?.value
+            .trim() ||
           '';
-      }
 
-      activateCategory(
-        button.dataset.category
-      );
+        state.category =
+          '';
 
-      loadArticles();
-
-    }
-  );
-
-  els.tiles?.addEventListener(
-    'click',
-    event => {
-
-      const button =
-        event.target.closest(
-          '[data-category]'
+        activateCategory(
+          ''
         );
 
-      if (!button) {
-        return;
+        loadArticles();
       }
+    );
+  }
 
-      state.query =
-        '';
+  if (
+    els.nav
+  ) {
 
-      if (els.search) {
-        els.search.value =
+    els.nav.addEventListener(
+      'click',
+
+      event => {
+
+        const button =
+          event.target.closest(
+            '[data-category]'
+          );
+
+        if (
+          !button
+        ) {
+          return;
+        }
+
+        state.query =
           '';
-      }
 
-      activateCategory(
-        button.dataset.category
-      );
+        if (
+          els.search
+        ) {
 
-      loadArticles();
+          els.search.value =
+            '';
+        }
 
-    }
-  );
-
-  els.pills?.addEventListener(
-    'click',
-    event => {
-
-      const button =
-        event.target.closest(
-          '[data-category]'
+        activateCategory(
+          button.dataset.category
         );
 
-      if (!button) {
-        return;
+        loadArticles();
       }
+    );
+  }
 
-      state.query =
-        '';
+  if (
+    els.tiles
+  ) {
 
-      if (els.search) {
-        els.search.value =
+    els.tiles.addEventListener(
+      'click',
+
+      event => {
+
+        const button =
+          event.target.closest(
+            '[data-category]'
+          );
+
+        if (
+          !button
+        ) {
+          return;
+        }
+
+        state.query =
           '';
+
+        if (
+          els.search
+        ) {
+
+          els.search.value =
+            '';
+        }
+
+        activateCategory(
+          button.dataset.category
+        );
+
+        loadArticles();
+
+        const section =
+          $('#sectionTitle');
+
+        if (
+          section
+        ) {
+
+          window.scrollTo(
+            {
+              top:
+                section
+                  .getBoundingClientRect()
+                  .top +
+                window.scrollY -
+                100,
+
+              behavior:
+                'smooth'
+            }
+          );
+        }
       }
+    );
+  }
 
-      activateCategory(
-        button.dataset.category
-      );
+  if (
+    els.pills
+  ) {
 
-      loadArticles();
+    els.pills.addEventListener(
+      'click',
 
-    }
-  );
+      event => {
 
-  els.clear?.addEventListener(
-    'click',
-    () => {
+        const button =
+          event.target.closest(
+            '[data-category]'
+          );
 
-      state.query =
-        '';
+        if (
+          !button
+        ) {
+          return;
+        }
 
-      if (els.search) {
-        els.search.value =
+        state.query =
           '';
+
+        if (
+          els.search
+        ) {
+
+          els.search.value =
+            '';
+        }
+
+        activateCategory(
+          button.dataset.category
+        );
+
+        loadArticles();
       }
+    );
+  }
 
-      activateCategory(
-        ''
-      );
+  if (
+    els.clear
+  ) {
 
-      loadArticles();
+    els.clear.addEventListener(
+      'click',
 
-    }
-  );
+      () => {
+
+        state.query =
+          '';
+
+        state.category =
+          '';
+
+        if (
+          els.search
+        ) {
+
+          els.search.value =
+            '';
+        }
+
+        activateCategory(
+          ''
+        );
+
+        loadArticles();
+      }
+    );
+  }
 
   $$(
     '[data-close-modal]'
@@ -2603,251 +3514,347 @@
 
   document.addEventListener(
     'keydown',
+
     event => {
 
       if (
         event.key ===
         'Escape'
       ) {
+
         closeModal();
       }
-
     }
   );
 
-  els.theme?.addEventListener(
-    'click',
-    () => {
+  if (
+    els.theme
+  ) {
 
-      const next =
-        document.documentElement
-          .dataset.theme ===
+    els.theme.addEventListener(
+      'click',
+
+      () => {
+
+        const next =
+          document.documentElement.dataset.theme ===
           'light'
-          ? 'dark'
-          : 'light';
 
-      document.documentElement
-        .dataset.theme =
-        next;
+            ? 'dark'
 
-      localStorage.setItem(
-        'bmi-theme',
-        next
-      );
+            : 'light';
 
-    }
-  );
+        document.documentElement.dataset.theme =
+          next;
+
+        localStorage.setItem(
+          'bmi-theme',
+          next
+        );
+      }
+    );
+  }
 
   const savedTheme =
     localStorage.getItem(
       'bmi-theme'
     );
 
-  if (savedTheme) {
-    document.documentElement
-      .dataset.theme =
+  if (
+    savedTheme
+  ) {
+
+    document.documentElement.dataset.theme =
       savedTheme;
   }
 
-  els.videoShortcut?.addEventListener(
-    'click',
-    scrollToVideo
-  );
-
-  els.videoNav?.addEventListener(
-    'click',
-    scrollToVideo
-  );
-
-  els.liveTv?.addEventListener(
-    'click',
-    scrollToVideo
-  );
-
-  els.showAllVideos?.addEventListener(
-    'click',
-    scrollToVideo
-  );
-
-  $('#refreshLive')?.addEventListener(
-    'click',
-    () => {
-
-      renderLiveUpdates();
-
-      toast(
-        'Live update diperbarui.',
-        'success'
-      );
-
-    }
-  );
-
-  $('#advertiseBtn')?.addEventListener(
-    'click',
-    () =>
-      toast(
-        'Modul iklan sedang disiapkan untuk kampanye aktif.'
-      )
-  );
-
-  $('#exploreBtn')?.addEventListener(
-    'click',
-    () =>
-      $('#sectionTitle')?.scrollIntoView(
-        {
-          behavior:
-            'smooth'
-        }
-      )
-  );
-
-  $('#openTrending')?.addEventListener(
-    'click',
-    () => {
-
-      activateCategory(
-        ''
-      );
-
-      state.query =
-        '';
-
-      loadArticles();
-
-      $('#sectionTitle')?.scrollIntoView(
-        {
-          behavior:
-            'smooth'
-        }
-      );
-
-    }
-  );
-
-  $('#loginBtn')?.addEventListener(
-    'click',
-    () =>
-      toast(
-        'Google Login akan diaktifkan pada tahap autentikasi.'
-      )
-  );
-
-  $('#joinBtn')?.addEventListener(
-    'click',
-    () =>
-      toast(
-        'Registrasi akan memakai Supabase Auth.'
-      )
-  );
-
-  $('#notificationBtn')?.addEventListener(
-    'click',
-    () =>
-      toast(
-        state.articles.length
-          ? 'Ada pembaruan berita terbaru.'
-          : 'Belum ada notifikasi baru.'
-      )
-  );
-
-  $('#newsletterForm')?.addEventListener(
-    'submit',
-    event => {
-
-      event.preventDefault();
-
-      event.target.reset();
-
-      toast(
-        'Terima kasih. Newsletter siap dihubungkan ke sistem email.',
-        'success'
-      );
-
-    }
-  );
-
-  /* =====================================================
-     URL ARTICLE
-     /?article=UUID
-  ===================================================== */
-
-  async function openArticleFromURL() {
-
-    const params =
-      new URLSearchParams(
-        window.location.search
-      );
-
-    const id =
-      params.get(
-        'article'
-      );
-
-    if (!id) {
-      return;
-    }
-
-    await openArticle(
-      id,
-      null
+  [
+    els.videoShortcut,
+    els.videoNav,
+    els.liveTv,
+    els.showAllVideos
+  ]
+    .filter(
+      Boolean
+    )
+    .forEach(
+      button =>
+        button.addEventListener(
+          'click',
+          scrollToVideo
+        )
     );
-  }
 
-  /* =====================================================
-     INIT
-  ===================================================== */
+  const refreshLive =
+    $('#refreshLive');
 
-  updateClock();
+  if (
+    refreshLive
+  ) {
 
-  setInterval(
-    updateClock,
-    1000
-  );
+    refreshLive.addEventListener(
+      'click',
 
-  const year =
-    $('#year');
-
-  if (year) {
-    year.textContent =
-      new Date().getFullYear();
-  }
-
-  trackEvent({
-    event_type:
-      'pageview',
-
-    content_type:
-      'site'
-  });
-
-  Promise.all([
-    loadSystem(),
-    loadArticles(),
-    loadVideos()
-  ]).then(
-    () => {
-
-      renderLiveUpdates();
-
-      openArticleFromURL();
-
-    }
-  );
-
-  state.autoTimer =
-    setInterval(
-      async () => {
-
-        await loadArticles({
-          silent:
-            true
-        });
+      () => {
 
         renderLiveUpdates();
 
-      },
-      60_000
+        toast(
+          'Live update diperbarui',
+          'success'
+        );
+      }
     );
+  }
+
+  const advertiseButton =
+    $('#advertiseBtn');
+
+  if (
+    advertiseButton
+  ) {
+
+    advertiseButton.addEventListener(
+      'click',
+
+      () => {
+
+        toast(
+          'Modul iklan siap dihubungkan ke sistem kampanye.'
+        );
+      }
+    );
+  }
+
+  const exploreButton =
+    $('#exploreBtn');
+
+  if (
+    exploreButton
+  ) {
+
+    exploreButton.addEventListener(
+      'click',
+
+      () => {
+
+        const section =
+          $('#sectionTitle');
+
+        if (
+          section
+        ) {
+
+          section.scrollIntoView(
+            {
+              behavior:
+                'smooth'
+            }
+          );
+        }
+      }
+    );
+  }
+
+  const openTrending =
+    $('#openTrending');
+
+  if (
+    openTrending
+  ) {
+
+    openTrending.addEventListener(
+      'click',
+
+      () => {
+
+        state.query =
+          '';
+
+        state.category =
+          '';
+
+        activateCategory(
+          ''
+        );
+
+        loadArticles();
+      }
+    );
+  }
+
+  const loginButton =
+    $('#loginBtn');
+
+  if (
+    loginButton
+  ) {
+
+    loginButton.addEventListener(
+      'click',
+
+      () =>
+        toast(
+          'Login dapat diaktifkan melalui Supabase Auth.'
+        )
+    );
+  }
+
+  const joinButton =
+    $('#joinBtn');
+
+  if (
+    joinButton
+  ) {
+
+    joinButton.addEventListener(
+      'click',
+
+      () =>
+        toast(
+          'Registrasi dapat diaktifkan melalui Supabase Auth.'
+        )
+    );
+  }
+
+  const notificationButton =
+    $('#notificationBtn');
+
+  if (
+    notificationButton
+  ) {
+
+    notificationButton.addEventListener(
+      'click',
+
+      () => {
+
+        toast(
+          state.articles.length
+
+            ? 'Ada pembaruan terbaru di feed berita.'
+
+            : 'Belum ada notifikasi baru.'
+        );
+      }
+    );
+  }
+
+  const newsletterForm =
+    $('#newsletterForm');
+
+  if (
+    newsletterForm
+  ) {
+
+    newsletterForm.addEventListener(
+      'submit',
+
+      async event => {
+
+        event.preventDefault();
+
+        const input =
+          $(
+            'input[type="email"]',
+            newsletterForm
+          );
+
+        const email =
+          input?.value
+            .trim();
+
+        if (
+          !email
+        ) {
+          return;
+        }
+
+        const result =
+          await post(
+            '/api/newsletter/subscribe',
+            {
+              email
+            }
+          );
+
+        if (
+          result
+        ) {
+
+          newsletterForm.reset();
+
+          toast(
+            'Terima kasih. Anda berhasil berlangganan.',
+            'success'
+          );
+
+        } else {
+
+          toast(
+            'Newsletter belum dapat diproses saat ini.'
+          );
+        }
+      }
+    );
+  }
+
+  /* =========================================================
+     INITIALIZE
+  ========================================================= */
+
+  async function initialize() {
+
+    updateClock();
+
+    setInterval(
+      updateClock,
+      1000
+    );
+
+    const year =
+      $('#year');
+
+    if (
+      year
+    ) {
+
+      year.textContent =
+        new Date()
+          .getFullYear();
+    }
+
+    await Promise.all([
+      loadSystem(),
+      loadArticles(),
+      loadVideos()
+    ]);
+
+    renderLiveUpdates();
+
+    await openFromUrl();
+
+    state.autoTimer =
+      setInterval(
+        async () => {
+
+          await Promise.all([
+            loadArticles(
+              {
+                silent:
+                  true
+              }
+            ),
+
+            loadVideos()
+          ]);
+
+        },
+
+        60_000
+      );
+  }
+
+  initialize();
 
 })();
