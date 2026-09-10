@@ -217,137 +217,141 @@ const safeHtml = value => {
 };
 
 /* =========================================================
-   AUTH HELPERS
+   AUTH + ADMIN SECURITY HELPERS
 ========================================================= */
 
+const getBearerToken = request => {
+  const authorization = request.headers.authorization || '';
+  return authorization.startsWith('Bearer ')
+    ? authorization.slice(7).trim()
+    : '';
+};
+
 const getAuthenticatedUser = async request => {
-  const authorization =
-    request.headers.authorization || '';
+  if (!adminClient) return null;
 
-  if (!authorization.startsWith('Bearer ')) {
-    return null;
-  }
-
-  const token =
-    authorization.slice(7);
+  const token = getBearerToken(request);
+  if (!token) return null;
 
   const {
     data: { user },
     error
-  } =
-    await adminClient.auth.getUser(token);
+  } = await adminClient.auth.getUser(token);
 
-  if (error) {
-    return null;
+  if (error || !user) return null;
+  return user;
+};
+
+const getAdminRecord = async userId => {
+  if (!adminClient || !userId) {
+    return { admin: null, error: new Error('Admin database unavailable') };
   }
 
-  return user || null;
+  const { data, error } = await adminClient
+    .from('admins')
+    .select('id,user_id,email,role,is_active,created_at,updated_at')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  return { admin: data || null, error };
+};
+
+const createUserSupabaseClient = token => {
+  if (!supabaseUrl || !supabaseAnonKey || !token) return null;
+
+  return createClient(
+    supabaseUrl,
+    supabaseAnonKey,
+    {
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      },
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false
+      }
+    }
+  );
 };
 
 /* =========================================================
    USER AUTH MIDDLEWARE
 ========================================================= */
 
-const requireUser =
-  async (
-    request,
-    response,
-    next
-  ) => {
-    try {
-      const user =
-        await getAuthenticatedUser(
-          request
-        );
+const requireUser = async (request, response, next) => {
+  try {
+    const user = await getAuthenticatedUser(request);
 
-      if (!user) {
-        return response
-          .status(401)
-          .json({
-            error:
-              'Login Google diperlukan'
-          });
-      }
-
-      request.user = user;
-
-      next();
-
-    } catch (error) {
-      response
-        .status(401)
-        .json({
-          error:
-            'Sesi login tidak valid'
-        });
+    if (!user) {
+      return response.status(401).json({
+        error: 'Login diperlukan'
+      });
     }
-  };
+
+    request.user = user;
+    next();
+
+  } catch (error) {
+    response.status(401).json({
+      error: 'Sesi login tidak valid'
+    });
+  }
+};
 
 /* =========================================================
    ADMIN MIDDLEWARE
-   IMPORTANT:
-   DECLARED BEFORE ADMIN ROUTES
+   Source of truth: public.admins
 ========================================================= */
 
-const admin =
-  async (
-    request,
-    response,
-    next
-  ) => {
-    try {
-      const user =
-        await getAuthenticatedUser(
-          request
-        );
-
-      if (!user) {
-        return response
-          .status(401)
-          .json({
-            error:
-              'Unauthorized'
-          });
-      }
-
-      const {
-        data: profile,
-        error: profileError
-      } =
-        await adminClient
-          .from('profiles')
-          .select('role')
-          .eq('id', user.id)
-          .maybeSingle();
-
-      if (
-        profileError ||
-        !profile ||
-        !['admin', 'editor']
-          .includes(profile.role)
-      ) {
-        return response
-          .status(403)
-          .json({
-            error:
-              'Forbidden'
-          });
-      }
-
-      request.user = user;
-      request.role = profile.role;
-
-      next();
-
-    } catch (error) {
-      response
-        .status(401)
-        .json({
-          error:
-            'Session tidak valid'
-        });
+const admin = async (request, response, next) => {
+  try {
+    if (!adminClient) {
+      return response.status(503).json({
+        error: 'Admin service belum dikonfigurasi'
+      });
     }
-  };
+
+    const user = await getAuthenticatedUser(request);
+
+    if (!user) {
+      return response.status(401).json({
+        error: 'Unauthorized'
+      });
+    }
+
+    const {
+      admin: adminRecord,
+      error
+    } = await getAdminRecord(user.id);
+
+    if (
+      error ||
+      !adminRecord ||
+      adminRecord.is_active !== true
+    ) {
+      return response.status(403).json({
+        error: 'Akses admin ditolak'
+      });
+    }
+
+    request.user = user;
+    request.admin = adminRecord;
+    request.role = adminRecord.role || 'admin';
+
+    next();
+
+  } catch (error) {
+    console.error('[ADMIN AUTH]', error);
+
+    response.status(401).json({
+      error: 'Session tidak valid'
+    });
+  }
+};
+
 
 /* =========================================================
    ANALYTICS
@@ -2996,259 +3000,500 @@ app.post(
 );
 
 /* =========================================================
-   ADMIN LOGIN
+   ADMIN LOGIN + BREAKING NEWS
+   FINAL SECURE INTEGRATION
 ========================================================= */
 
 app.post(
   '/api/admin/login',
-
   authLimiter,
-
-  async (
-    request,
-    response
-  ) => {
+  async (request, response) => {
     try {
-      const {
-        email,
-        password
-      } =
-        request.body || {};
+      if (!adminClient) {
+        return response.status(503).json({
+          error: 'Admin service belum dikonfigurasi'
+        });
+      }
 
-      if (
-        !email ||
-        !password
-      ) {
-        return response
-          .status(400)
-          .json({
-            error:
-              'Email dan password wajib diisi'
-          });
+      const email = cleanText(request.body?.email, 320).toLowerCase();
+      const password = String(request.body?.password || '');
+
+      if (!email || !password) {
+        return response.status(400).json({
+          error: 'Email dan password wajib diisi'
+        });
+      }
+
+      const { data, error } = await authClient
+        .auth
+        .signInWithPassword({ email, password });
+
+      if (error || !data?.session || !data?.user) {
+        return response.status(401).json({
+          error: 'Login gagal'
+        });
       }
 
       const {
-        data,
-        error
-      } =
-        await authClient
-          .auth
-          .signInWithPassword({
-            email,
-            password
-          });
+        admin: adminRecord,
+        error: adminError
+      } = await getAdminRecord(data.user.id);
 
       if (
-        error ||
-        !data.session
+        adminError ||
+        !adminRecord ||
+        adminRecord.is_active !== true
       ) {
-        return response
-          .status(401)
-          .json({
-            error:
-              'Login gagal'
-          });
-      }
-
-      const {
-        data: profile
-      } =
-        await adminClient
-          .from('profiles')
-          .select('role')
-          .eq(
-            'id',
-            data.user.id
-          )
-          .maybeSingle();
-
-      if (
-        !profile ||
-        ![
-          'admin',
-          'editor'
-        ].includes(
-          profile.role
-        )
-      ) {
-        return response
-          .status(403)
-          .json({
-            error:
-              'Akun bukan admin/editor'
-          });
+        return response.status(403).json({
+          error: 'Akun berhasil login tetapi tidak memiliki akses admin aktif'
+        });
       }
 
       response.json({
-        ok:
-          true,
-
-        token:
-          data
-            .session
-            .access_token,
-
-        user:
-          data.user,
-
-        role:
-          profile.role
+        ok: true,
+        token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+        expires_at: data.session.expires_at,
+        user: {
+          id: data.user.id,
+          email: data.user.email
+        },
+        admin: adminRecord,
+        role: adminRecord.role
       });
 
     } catch (error) {
-      response
-        .status(500)
-        .json({
-          error:
-            error.message
-        });
+      console.error('[ADMIN LOGIN]', error);
+
+      response.status(500).json({
+        error: 'Terjadi kesalahan pada login admin'
+      });
     }
   }
 );
 
 /* =========================================================
-   ADMIN BREAKING NEWS
+   ADMIN SESSION / PROFILE
+========================================================= */
+
+app.get(
+  '/api/admin/me',
+  admin,
+  async (request, response) => {
+    response.json({
+      ok: true,
+      user: {
+        id: request.user.id,
+        email: request.user.email
+      },
+      admin: request.admin,
+      role: request.role
+    });
+  }
+);
+
+/* =========================================================
+   BREAKING CANDIDATES
 ========================================================= */
 
 app.get(
   '/api/admin/breaking',
-
   admin,
+  async (request, response) => {
+    try {
+      const limit = cleanLimit(request.query.limit, 500, 200);
 
-  async (
-    request,
-    response
-  ) => {
-    const {
-      data,
-      error
-    } =
-      await adminClient
-        .from(
-          'breaking_candidates'
-        )
+      const { data, error } = await adminClient
+        .from('breaking_candidates')
         .select('*')
-        .order(
-          'created_at',
-          {
-            ascending:
-              false
-          }
-        )
-        .limit(200);
+        .eq('status', 'candidate')
+        .order('score', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(limit);
 
-    response
-      .status(
-        error
-          ? 500
-          : 200
-      )
-      .json(
-        error
-          ? {
-              error:
-                error.message
-            }
-          : data
-      );
+      if (error) throw error;
+
+      response.json({
+        ok: true,
+        data: data || []
+      });
+
+    } catch (error) {
+      console.error('[ADMIN BREAKING CANDIDATES]', error);
+
+      response.status(500).json({
+        error: error.message || 'Gagal mengambil breaking candidates'
+      });
+    }
   }
 );
 
-app.patch(
-  '/api/admin/breaking/:id',
-
+app.get(
+  '/api/admin/breaking/candidates',
   admin,
-
-  async (
-    request,
-    response
-  ) => {
+  async (request, response) => {
     try {
-      const status =
-        [
-          'candidate',
-          'approved',
-          'dismissed'
-        ].includes(
-          request.body?.status
-        )
-          ? request.body.status
-          : 'candidate';
+      const limit = cleanLimit(request.query.limit, 500, 100);
 
-      const {
-        data,
-        error
-      } =
-        await adminClient
-          .from(
-            'breaking_candidates'
-          )
-          .update({
-            status,
+      const { data, error } = await adminClient.rpc(
+        'get_breaking_candidates',
+        { p_limit: limit }
+      );
 
-            updated_at:
-              new Date()
-                .toISOString()
-          })
-          .eq(
-            'id',
-            request.params.id
-          )
-          .select()
-          .single();
+      if (error) throw error;
 
-      if (
-        !error &&
-        status === 'approved' &&
-        data?.event_key
-      ) {
-        await adminClient
-          .from('articles')
-          .update({
-            breaking:
-              true,
-
-            editorial_status:
-              'approved',
-
-            updated_at:
-              new Date()
-                .toISOString()
-          })
-          .eq(
-            'event_key',
-            data.event_key
-          );
-      }
-
-      response
-        .status(
-          error
-            ? 400
-            : 200
-        )
-        .json(
-          error
-            ? {
-                error:
-                  error.message
-              }
-            : data
-        );
+      response.json({
+        ok: true,
+        data: data || []
+      });
 
     } catch (error) {
-      response
-        .status(500)
-        .json({
-          error:
-            error.message
+      console.error('[ADMIN BREAKING RPC CANDIDATES]', error);
+
+      response.status(500).json({
+        error: error.message || 'Gagal mengambil breaking candidates'
+      });
+    }
+  }
+);
+
+/* =========================================================
+   APPROVE BREAKING
+   Uses authenticated user's JWT so SQL RPC security remains
+   the source of truth.
+========================================================= */
+
+app.post(
+  '/api/admin/breaking/:id/approve',
+  admin,
+  async (request, response) => {
+    try {
+      const candidateId = cleanText(request.params.id, 64);
+      const duration = cleanLimit(
+        request.body?.duration_minutes,
+        1440,
+        120
+      );
+
+      const token = getBearerToken(request);
+      const userSupabase = createUserSupabaseClient(token);
+
+      if (!userSupabase) {
+        return response.status(503).json({
+          error: 'Supabase user client belum dikonfigurasi'
         });
+      }
+
+      const { data, error } = await userSupabase.rpc(
+        'admin_approve_breaking',
+        {
+          p_candidate_id: candidateId,
+          p_duration_minutes: duration
+        }
+      );
+
+      if (error) {
+        return response.status(400).json({
+          error: error.message || 'Approve breaking gagal'
+        });
+      }
+
+      response.json({
+        ok: Boolean(data),
+        approved: Boolean(data),
+        candidate_id: candidateId,
+        duration_minutes: duration,
+        approved_by: request.user.id
+      });
+
+    } catch (error) {
+      console.error('[ADMIN BREAKING APPROVE]', error);
+
+      response.status(500).json({
+        error: error.message || 'Approve breaking gagal'
+      });
+    }
+  }
+);
+
+/* =========================================================
+   REJECT BREAKING
+========================================================= */
+
+app.post(
+  '/api/admin/breaking/:id/reject',
+  admin,
+  async (request, response) => {
+    try {
+      const candidateId = cleanText(request.params.id, 64);
+      const reason = cleanText(
+        request.body?.reason,
+        1000
+      ) || null;
+
+      const token = getBearerToken(request);
+      const userSupabase = createUserSupabaseClient(token);
+
+      if (!userSupabase) {
+        return response.status(503).json({
+          error: 'Supabase user client belum dikonfigurasi'
+        });
+      }
+
+      const { data, error } = await userSupabase.rpc(
+        'admin_reject_breaking',
+        {
+          p_candidate_id: candidateId,
+          p_reason: reason
+        }
+      );
+
+      if (error) {
+        return response.status(400).json({
+          error: error.message || 'Reject breaking gagal'
+        });
+      }
+
+      response.json({
+        ok: Boolean(data),
+        rejected: Boolean(data),
+        candidate_id: candidateId,
+        reason,
+        rejected_by: request.user.id
+      });
+
+    } catch (error) {
+      console.error('[ADMIN BREAKING REJECT]', error);
+
+      response.status(500).json({
+        error: error.message || 'Reject breaking gagal'
+      });
+    }
+  }
+);
+
+/* =========================================================
+   BACKWARD COMPATIBILITY PATCH ROUTE
+   Only candidate/approved/rejected are allowed.
+========================================================= */
+
+app.patch(
+  '/api/admin/breaking/:id',
+  admin,
+  async (request, response) => {
+    const status = cleanText(request.body?.status, 30).toLowerCase();
+
+    if (status === 'approved') {
+      request.url = `/api/admin/breaking/${request.params.id}/approve`;
+      return response.status(400).json({
+        error: 'Gunakan POST /api/admin/breaking/:id/approve'
+      });
+    }
+
+    if (status === 'rejected' || status === 'dismissed') {
+      return response.status(400).json({
+        error: 'Gunakan POST /api/admin/breaking/:id/reject'
+      });
+    }
+
+    return response.status(400).json({
+      error: 'Status breaking tidak dapat diubah langsung'
+    });
+  }
+);
+
+/* =========================================================
+   ACTIVE BREAKING
+========================================================= */
+
+app.get(
+  '/api/admin/breaking/active',
+  admin,
+  async (request, response) => {
+    try {
+      const { data, error } = await adminClient.rpc(
+        'get_active_breaking_news'
+      );
+
+      if (error) throw error;
+
+      response.json({
+        ok: true,
+        data: data || []
+      });
+
+    } catch (error) {
+      console.error('[ADMIN ACTIVE BREAKING]', error);
+
+      response.status(500).json({
+        error: error.message || 'Gagal mengambil breaking aktif'
+      });
+    }
+  }
+);
+
+/* =========================================================
+   BREAKING HISTORY
+========================================================= */
+
+app.get(
+  '/api/admin/breaking/history',
+  admin,
+  async (request, response) => {
+    try {
+      const limit = cleanLimit(request.query.limit, 500, 100);
+
+      const { data, error } = await adminClient.rpc(
+        'get_breaking_history',
+        { p_limit: limit }
+      );
+
+      if (error) throw error;
+
+      response.json({
+        ok: true,
+        data: data || []
+      });
+
+    } catch (error) {
+      console.error('[ADMIN BREAKING HISTORY]', error);
+
+      response.status(500).json({
+        error: error.message || 'Gagal mengambil breaking history'
+      });
+    }
+  }
+);
+
+/* =========================================================
+   BREAKING ENGINE RUN NOW
+========================================================= */
+
+app.post(
+  '/api/admin/breaking/run',
+  admin,
+  async (request, response) => {
+    try {
+      const { data, error } = await adminClient.rpc(
+        'run_breaking_news_engine'
+      );
+
+      if (error) throw error;
+
+      response.json({
+        ok: true,
+        data: data || []
+      });
+
+    } catch (error) {
+      console.error('[ADMIN BREAKING ENGINE]', error);
+
+      response.status(500).json({
+        error: error.message || 'Gagal menjalankan breaking engine'
+      });
+    }
+  }
+);
+
+/* =========================================================
+   BREAKING HEALTH CHECK ALL-IN-ONE
+========================================================= */
+
+app.get(
+  '/api/admin/breaking/health',
+  admin,
+  async (request, response) => {
+    try {
+      const [
+        statusResult,
+        activeResult,
+        candidateResult,
+        historyResult
+      ] = await Promise.all([
+        adminClient.rpc('get_breaking_system_status'),
+        adminClient.rpc('get_active_breaking_news'),
+        adminClient.rpc('get_breaking_candidates', { p_limit: 1 }),
+        adminClient.rpc('get_breaking_history', { p_limit: 1 })
+      ]);
+
+      const errors = [
+        statusResult.error,
+        activeResult.error,
+        candidateResult.error,
+        historyResult.error
+      ].filter(Boolean);
+
+      if (errors.length) {
+        throw errors[0];
+      }
+
+      response.json({
+        ok: true,
+        health: statusResult.data?.[0] || null,
+        active_breaking_count: (activeResult.data || []).length,
+        candidate_endpoint_ready: true,
+        history_endpoint_ready: true,
+        checked_at: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('[ADMIN BREAKING HEALTH]', error);
+
+      response.status(500).json({
+        ok: false,
+        error: error.message || 'Breaking health check gagal',
+        checked_at: new Date().toISOString()
+      });
+    }
+  }
+);
+
+/* =========================================================
+   ADMIN DASHBOARD HEALTH ALL-IN-ONE
+========================================================= */
+
+app.get(
+  '/api/admin/health',
+  admin,
+  async (request, response) => {
+    try {
+      const [
+        breakingStatus,
+        adminStatus
+      ] = await Promise.all([
+        adminClient.rpc('get_breaking_system_status'),
+        getAdminRecord(request.user.id)
+      ]);
+
+      response.json({
+        ok: !breakingStatus.error && !adminStatus.error,
+        admin: {
+          id: adminStatus.admin?.id || null,
+          user_id: adminStatus.admin?.user_id || request.user.id,
+          email: adminStatus.admin?.email || request.user.email,
+          role: adminStatus.admin?.role || null,
+          is_active: adminStatus.admin?.is_active === true
+        },
+        breaking: breakingStatus.data?.[0] || null,
+        supabase_configured: Boolean(isSupabaseConfigured),
+        service_role_available: Boolean(adminClient),
+        checked_at: new Date().toISOString()
+      });
+
+    } catch (error) {
+      console.error('[ADMIN HEALTH]', error);
+
+      response.status(500).json({
+        ok: false,
+        error: error.message || 'Admin health check gagal'
+      });
     }
   }
 );
 
 /* =========================================================
    ADMIN SYNC
+========================================================= */
 ========================================================= */
 
 app.post(
@@ -5932,88 +6177,3 @@ if (
       60_000
   );
 }
-
-/* ============================================================
-   MUDA INDONESIA
-   SYSTEM HEALTH CHECK ENDPOINT
-   ============================================================ */
-
-app.get('/api/admin/system-health', async (req, res) => {
-
-    try {
-
-        const {
-            data,
-            error
-        } = await supabase
-            .rpc('get_full_system_health');
-
-
-        if (error) {
-
-            console.error(
-                '[SYSTEM HEALTH ERROR]',
-                error
-            );
-
-
-            return res.status(500).json({
-
-                success: false,
-
-                message:
-                    'Failed to check system health',
-
-                error:
-                    error.message
-
-            });
-
-        }
-
-
-        const health =
-            Array.isArray(data)
-                ? data[0]
-                : data;
-
-
-        console.log(
-            '[SYSTEM HEALTH]',
-            health
-        );
-
-
-        return res.status(200).json({
-
-            success: true,
-
-            data: health
-
-        });
-
-
-    } catch (error) {
-
-
-        console.error(
-            '[SYSTEM HEALTH SERVER ERROR]',
-            error
-        );
-
-
-        return res.status(500).json({
-
-            success: false,
-
-            message:
-                'Internal server error',
-
-            error:
-                error.message
-
-        });
-
-    }
-
-});
