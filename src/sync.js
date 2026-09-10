@@ -9,19 +9,84 @@ import {
 
 
 /* =========================================================
-   RSS CONFIG
+   CONFIG
 ========================================================= */
+
+const RSS_CONCURRENCY =
+  Math.max(
+    1,
+    Math.min(
+      Number(
+        process.env.RSS_CONCURRENCY
+      ) || 5,
+      10
+    )
+  );
+
+
+const RSS_TIMEOUT_MS =
+  Math.max(
+    3000,
+    Math.min(
+      Number(
+        process.env.RSS_TIMEOUT_MS
+      ) || 12000,
+      30000
+    )
+  );
+
+
+const RSS_RETRIES =
+  Math.max(
+    0,
+    Math.min(
+      Number(
+        process.env.RSS_RETRIES
+      ) || 2,
+      3
+    )
+  );
+
+
+const MAX_ITEMS_PER_FEED =
+  Math.max(
+    1,
+    Math.min(
+      Number(
+        process.env.MAX_ITEMS_PER_FEED
+      ) || 15,
+      50
+    )
+  );
+
+
+const SYNC_LOCK_TTL =
+  Math.max(
+    120,
+    Math.min(
+      Number(
+        process.env.SYNC_LOCK_TTL
+      ) || 840,
+      3600
+    )
+  );
+
 
 const parser =
   new Parser({
-    timeout: 15000,
+    timeout:
+      RSS_TIMEOUT_MS,
 
     headers: {
       'User-Agent':
-        'BeritaMudaIndonesia/5.2 RSS Sync'
+        'BeritaMudaIndonesia/5.3 RSS Sync'
     }
-  });
+  );
 
+
+/* =========================================================
+   RSS FEEDS
+========================================================= */
 
 const feeds =
   (
@@ -36,12 +101,98 @@ const feeds =
         value.trim()
     )
 
-    .filter(Boolean);
+    .filter(Boolean)
+
+    .filter(
+      (
+        value,
+        index,
+        array
+      ) =>
+        array.indexOf(
+          value
+        ) === index
+    );
 
 
 /* =========================================================
    HELPERS
 ========================================================= */
+
+const sleep =
+  milliseconds =>
+
+    new Promise(
+      resolve =>
+        setTimeout(
+          resolve,
+          milliseconds
+        )
+    );
+
+
+const nowIso =
+  () =>
+    new Date()
+      .toISOString();
+
+
+function withTimeout(
+  promise,
+  milliseconds,
+  label = 'Operation'
+) {
+
+  let timer;
+
+
+  const timeout =
+    new Promise(
+      (
+        resolve,
+        reject
+      ) => {
+
+        timer =
+          setTimeout(
+            () => {
+
+              reject(
+
+                new Error(
+                  `${label} timeout after ${milliseconds}ms`
+                )
+
+              );
+
+            },
+
+            milliseconds
+          );
+
+      }
+    );
+
+
+  return Promise
+
+    .race([
+      promise,
+      timeout
+    ])
+
+    .finally(
+      () => {
+
+        clearTimeout(
+          timer
+        );
+
+      }
+    );
+
+}
+
 
 const stripHtml =
   (value = '') =>
@@ -60,6 +211,26 @@ const stripHtml =
       .replace(
         /<[^>]+>/g,
         ' '
+      )
+
+      .replace(
+        /&nbsp;/gi,
+        ' '
+      )
+
+      .replace(
+        /&amp;/gi,
+        '&'
+      )
+
+      .replace(
+        /&quot;/gi,
+        '"'
+      )
+
+      .replace(
+        /&#39;/gi,
+        "'"
       )
 
       .replace(
@@ -103,7 +274,9 @@ const canonicalUrl =
     try {
 
       const url =
-        new URL(value);
+        new URL(
+          value
+        );
 
 
       url.hash =
@@ -117,7 +290,9 @@ const canonicalUrl =
         'utm_term',
         'utm_content',
         'fbclid',
-        'gclid'
+        'gclid',
+        'mc_cid',
+        'mc_eid'
       ]
 
         .forEach(
@@ -196,7 +371,9 @@ const canonicalUrl =
 
 const normalizeTitle =
   (value = '') =>
-    stripHtml(value)
+    stripHtml(
+      value
+    )
 
       .toLowerCase()
 
@@ -275,65 +452,148 @@ const categoryFor =
   ) => {
 
     const text =
-      (
-        url +
-        ' ' +
-        title
-      )
+      `${url} ${title}`
 
         .toLowerCase();
 
 
-    const categories = {
+    const categories = [
 
-      politik:
-        'POLITIK',
+      {
+        category:
+          'TEKNOLOGI',
 
-      hukum:
-        'HUKUM',
+        keywords: [
+          'teknologi',
+          'technology',
+          'digital',
+          'internet',
+          'gadget',
+          'ai ',
+          'artificial intelligence',
+          'startup'
+        ]
+      },
 
-      ekonomi:
-        'EKONOMI',
+      {
+        category:
+          'OLAHRAGA',
 
-      teknologi:
-        'TEKNOLOGI',
+        keywords: [
+          'olahraga',
+          'sport',
+          'bola',
+          'sepak bola',
+          'football',
+          'liga',
+          'badminton',
+          'bulutangkis'
+        ]
+      },
 
-      olahraga:
-        'OLAHRAGA',
+      {
+        category:
+          'EKONOMI',
 
-      internasional:
-        'INTERNASIONAL',
+        keywords: [
+          'ekonomi',
+          'bisnis',
+          'keuangan',
+          'bank',
+          'saham',
+          'investasi',
+          'finansial'
+        ]
+      },
 
-      hiburan:
-        'HIBURAN',
+      {
+        category:
+          'POLITIK',
 
-      lifestyle:
-        'LIFESTYLE'
+        keywords: [
+          'politik',
+          'pemilu',
+          'pilkada',
+          'dpr',
+          'presiden',
+          'partai'
+        ]
+      },
 
-    };
+      {
+        category:
+          'HUKUM',
+
+        keywords: [
+          'hukum',
+          'pengadilan',
+          'kejaksaan',
+          'korupsi',
+          'tersangka',
+          'polisi'
+        ]
+      },
+
+      {
+        category:
+          'HIBURAN',
+
+        keywords: [
+          'hiburan',
+          'film',
+          'musik',
+          'seleb',
+          'artis',
+          'entertainment'
+        ]
+      },
+
+      {
+        category:
+          'INTERNASIONAL',
+
+        keywords: [
+          'internasional',
+          'international',
+          'world',
+          'dunia'
+        ]
+      },
+
+      {
+        category:
+          'LIFESTYLE',
+
+        keywords: [
+          'lifestyle',
+          'gaya hidup',
+          'kuliner',
+          'fashion',
+          'wisata',
+          'travel'
+        ]
+      }
+
+    ];
 
 
     for (
-      const [
-        keyword,
-        category
-      ]
-
-      of Object.entries(
-        categories
-      )
-
+      const item
+      of categories
     ) {
 
       if (
 
-        text.includes(
-          keyword
+        item.keywords.some(
+          keyword =>
+            text.includes(
+              keyword
+            )
         )
 
       ) {
 
-        return category;
+        return item.category;
 
       }
 
@@ -375,40 +635,83 @@ const authorOf =
 
 
 const imageOf =
-  item =>
+  item => {
 
-    item.enclosure?.url ||
+    const candidates = [
 
-    item['media:content']?.url ||
+      item.enclosure?.url,
 
-    item['media:thumbnail']?.url ||
+      item['media:content']?.url,
 
-    item.itunes?.image ||
+      item['media:thumbnail']?.url,
 
-    null;
+      item.itunes?.image,
+
+      item.image?.url,
+
+      item.image
+
+    ];
 
 
-const sleep =
-  milliseconds =>
+    return (
 
-    new Promise(
-      resolve =>
-        setTimeout(
-          resolve,
-          milliseconds
-        )
+      candidates.find(
+
+        value =>
+          typeof value ===
+            'string' &&
+
+          /^https?:\/\//i.test(
+            value
+          )
+
+      )
+
+      ||
+
+      null
+
     );
+
+  };
+
+
+const sourceNameFromUrl =
+  value => {
+
+    try {
+
+      return new URL(
+        value
+      ).hostname
+
+        .replace(
+          /^www\./,
+          ''
+        );
+
+    }
+
+    catch {
+
+      return 'RSS';
+
+    }
+
+  };
 
 
 /* =========================================================
    SAFE RPC
 
-   FIX:
-   Jangan gunakan:
+   PENTING:
+   JANGAN gunakan:
 
    supabase.rpc(...).catch(...)
 
-   Supabase RPC harus di-await terlebih dahulu.
+   Karena Supabase Query Builder bukan Promise biasa
+   sampai di-await.
 ========================================================= */
 
 async function safeRpc(
@@ -435,7 +738,7 @@ async function safeRpc(
 
       console.error(
 
-        `[SYNC RPC] ${name}:`,
+        `[SYNC RPC ERROR] ${name}:`,
 
         error.message ||
         error
@@ -446,8 +749,11 @@ async function safeRpc(
 
 
     return {
+
       data,
+
       error
+
     };
 
   }
@@ -481,7 +787,7 @@ async function safeRpc(
 
 
 /* =========================================================
-   FETCH RSS
+   FETCH FEED
 ========================================================= */
 
 async function fetchFeed(
@@ -495,7 +801,8 @@ async function fetchFeed(
 
     let attempt = 0;
 
-    attempt < 3;
+    attempt <=
+    RSS_RETRIES;
 
     attempt++
 
@@ -507,18 +814,34 @@ async function fetchFeed(
 
     try {
 
-      return {
+      const feed =
 
-        feed:
+        await withTimeout(
 
-          await parser.parseURL(
+          parser.parseURL(
             url
           ),
+
+          RSS_TIMEOUT_MS,
+
+          `RSS ${url}`
+
+        );
+
+
+      return {
+
+        feed,
 
         latency:
 
           Date.now() -
-          started
+          started,
+
+        attempts:
+
+          attempt +
+          1
 
       };
 
@@ -533,18 +856,30 @@ async function fetchFeed(
 
 
       if (
-        attempt < 2
+
+        attempt <
+        RSS_RETRIES
+
       ) {
 
+        const delay =
+
+          Math.min(
+
+            1000 *
+
+            (
+              2 **
+              attempt
+            ),
+
+            4000
+
+          );
+
+
         await sleep(
-
-          500 *
-
-          (
-            2 **
-            attempt
-          )
-
+          delay
         );
 
       }
@@ -560,83 +895,979 @@ async function fetchFeed(
 
 
 /* =========================================================
-   MAIN SYNC
+   BUILD ARTICLE ROW
 ========================================================= */
 
-export async function syncFeeds() {
+function buildArticleRow(
+  item,
+  feedUrl,
+  source
+) {
 
-  /*
-   * Acquire sync lock
-   */
+  const rawHtml =
 
-  const lock =
-    await safeRpc(
+    item['content:encoded'] ||
 
-      'acquire_sync_lock',
+    item.content ||
 
-      {
+    item.summary ||
 
-        p_name:
-          'news-sync',
+    item.description ||
 
-        p_ttl_seconds:
-          240
+    '';
 
-      }
+
+  const plain =
+
+    stripHtml(
+
+      item.contentSnippet ||
+
+      rawHtml ||
+
+      item.summary ||
+
+      item.description ||
+
+      ''
 
     );
 
 
+  const contentHtml =
+
+    safeHtmlFromFeed(
+      rawHtml
+    );
+
+
+  const urlRaw =
+
+    String(
+
+      item.link ||
+
+      item.guid ||
+
+      ''
+
+    )
+
+      .trim();
+
+
+  const canonical =
+
+    canonicalUrl(
+      urlRaw
+    );
+
+
+  const title =
+
+    String(
+      item.title ||
+      ''
+    )
+
+      .trim()
+
+      .slice(
+        0,
+        500
+      );
+
+
+  const category =
+
+    categoryFor(
+      feedUrl,
+      title
+    );
+
+
+  const published =
+
+    item.isoDate ||
+
+    item.pubDate ||
+
+    nowIso();
+
+
+  return {
+
+    title,
+
+
+    summary:
+
+      plain.slice(
+        0,
+        600
+      ),
+
+
+    content_html:
+
+      contentHtml.length >=
+      80
+
+        ? contentHtml.slice(
+            0,
+            50000
+          )
+
+        : null,
+
+
+    url:
+      urlRaw,
+
+
+    canonical_url:
+
+      canonical ||
+      null,
+
+
+    content_fingerprint:
+
+      fingerprintOf({
+
+        title,
+
+        summary:
+          plain,
+
+        source
+
+      }),
+
+
+    source_url:
+      urlRaw,
+
+
+    source,
+
+
+    author_name:
+
+      authorOf(
+        item
+      ),
+
+
+    category,
+
+
+    event_key:
+
+      eventKeyOf({
+
+        title,
+
+        category
+
+      }),
+
+
+    editorial_status:
+      'auto',
+
+
+    image_url:
+
+      imageOf(
+        item
+      ),
+
+
+    published_at:
+      published,
+
+
+    content_source:
+
+      contentHtml.length >=
+      80
+
+        ? 'rss'
+
+        : 'snippet',
+
+
+    content_available:
+
+      contentHtml.length >=
+      80,
+
+
+    status:
+      'published'
+
+  };
+
+}
+
+
+/* =========================================================
+   UPDATE SOURCE SUCCESS
+========================================================= */
+
+async function updateSourceSuccess(
+  {
+    source,
+    url,
+    latency
+  }
+) {
+
+  const timestamp =
+    nowIso();
+
+
+  const {
+    error
+  } =
+
+    await supabase
+
+      .from(
+        'news_sources'
+      )
+
+      .upsert(
+
+        {
+
+          name:
+            source,
+
+          feed_url:
+            url,
+
+          active:
+            true,
+
+          status:
+            'healthy',
+
+          last_success_at:
+            timestamp,
+
+          last_latency_ms:
+            latency,
+
+          updated_at:
+            timestamp
+
+        },
+
+        {
+
+          onConflict:
+            'feed_url'
+
+        }
+
+      );
+
+
   if (
-    lock.error
+    error
   ) {
 
-    throw lock.error;
+    console.error(
+
+      '[SYNC] Source success update failed:',
+
+      error.message ||
+      error
+
+    );
 
   }
 
+}
+
+
+/* =========================================================
+   UPDATE SOURCE FAILURE
+========================================================= */
+
+async function updateSourceFailure(
+  {
+    url,
+    latency
+  }
+) {
+
+  try {
+
+    const {
+      data:
+        existing,
+      error:
+        existingError
+    } =
+
+      await supabase
+
+        .from(
+          'news_sources'
+        )
+
+        .select(
+          'failure_count'
+        )
+
+        .eq(
+          'feed_url',
+          url
+        )
+
+        .maybeSingle();
+
+
+    if (
+      existingError
+    ) {
+
+      console.error(
+
+        '[SYNC] Read source failure count failed:',
+
+        existingError.message ||
+        existingError
+
+      );
+
+    }
+
+
+    const failureCount =
+
+      Number(
+
+        existing?.failure_count ||
+
+        0
+
+      ) +
+
+      1;
+
+
+    const timestamp =
+      nowIso();
+
+
+    const {
+      error
+    } =
+
+      await supabase
+
+        .from(
+          'news_sources'
+        )
+
+        .upsert(
+
+          {
+
+            name:
+
+              sourceNameFromUrl(
+                url
+              ),
+
+
+            feed_url:
+              url,
+
+
+            active:
+              true,
+
+
+            status:
+
+              failureCount >=
+              3
+
+                ? 'unhealthy'
+
+                : 'degraded',
+
+
+            failure_count:
+              failureCount,
+
+
+            last_failure_at:
+              timestamp,
+
+
+            last_latency_ms:
+              latency,
+
+
+            updated_at:
+              timestamp
+
+          },
+
+          {
+
+            onConflict:
+              'feed_url'
+
+          }
+
+        );
+
+
+    if (
+      error
+    ) {
+
+      console.error(
+
+        '[SYNC] Source failure update failed:',
+
+        error.message ||
+        error
+
+      );
+
+    }
+
+  }
+
+  catch (
+    error
+  ) {
+
+    console.error(
+
+      '[SYNC] updateSourceFailure failed:',
+
+      error.message ||
+      error
+
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   UPSERT ARTICLES
+
+   Dibagi per batch supaya request database tidak terlalu besar.
+========================================================= */
+
+async function saveArticles(
+  rows
+) {
 
   if (
-    !lock.data
+    !rows.length
   ) {
 
     return {
-
-      skipped:
-        true,
-
-      reason:
-        'sync_locked',
-
-      at:
-
-        new Date()
-          .toISOString()
-
+      saved:
+        0
     };
 
   }
 
 
-  let rowsSeen =
+  const BATCH_SIZE =
+    100;
+
+
+  let saved =
     0;
 
 
-  let upserted =
+  for (
+
+    let index = 0;
+
+    index <
+    rows.length;
+
+    index +=
+      BATCH_SIZE
+
+  ) {
+
+    const batch =
+
+      rows.slice(
+
+        index,
+
+        index +
+        BATCH_SIZE
+
+      );
+
+
+    const {
+      error
+    } =
+
+      await supabase
+
+        .from(
+          'articles'
+        )
+
+        .upsert(
+
+          batch,
+
+          {
+
+            onConflict:
+              'url',
+
+            ignoreDuplicates:
+              false
+
+          }
+
+        );
+
+
+    if (
+      error
+    ) {
+
+      throw error;
+
+    }
+
+
+    saved +=
+      batch.length;
+
+  }
+
+
+  return {
+    saved
+  };
+
+}
+
+
+/* =========================================================
+   PROCESS ONE FEED
+
+   Satu feed tidak boleh menghentikan seluruh proses sync.
+========================================================= */
+
+async function processFeed(
+  url
+) {
+
+  const started =
+    Date.now();
+
+
+  try {
+
+    const {
+      feed,
+      latency,
+      attempts
+    } =
+
+      await fetchFeed(
+        url
+      );
+
+
+    const source =
+
+      String(
+
+        feed.title ||
+
+        sourceNameFromUrl(
+          url
+        )
+
+      )
+
+        .trim()
+
+        .slice(
+          0,
+          120
+        );
+
+
+    await updateSourceSuccess({
+
+      source,
+
+      url,
+
+      latency
+
+    });
+
+
+    const uniqueUrls =
+      new Set();
+
+
+    const rows =
+
+      (
+        feed.items ||
+        []
+      )
+
+        .slice(
+          0,
+          MAX_ITEMS_PER_FEED
+        )
+
+        .map(
+
+          item =>
+            buildArticleRow(
+
+              item,
+
+              url,
+
+              source
+
+            )
+
+        )
+
+        .filter(
+
+          item => {
+
+            if (
+
+              !item.title ||
+
+              !item.url
+
+            ) {
+
+              return false;
+
+            }
+
+
+            if (
+
+              uniqueUrls.has(
+                item.url
+              )
+
+            ) {
+
+              return false;
+
+            }
+
+
+            uniqueUrls.add(
+              item.url
+            );
+
+
+            return true;
+
+          }
+
+        );
+
+
+    const saveResult =
+
+      await saveArticles(
+        rows
+      );
+
+
+    return {
+
+      ok:
+        true,
+
+
+      url,
+
+
+      source,
+
+
+      rowsSeen:
+        rows.length,
+
+
+      upserted:
+
+        saveResult.saved,
+
+
+      failed:
+        false,
+
+
+      latency,
+
+
+      attempts
+
+    };
+
+  }
+
+  catch (
+    error
+  ) {
+
+    const latency =
+      Date.now() -
+      started;
+
+
+    console.error(
+
+      '[SYNC] RSS FAILED:',
+
+      url,
+
+      error.message ||
+      error
+
+    );
+
+
+    await updateSourceFailure({
+
+      url,
+
+      latency
+
+    });
+
+
+    return {
+
+      ok:
+        false,
+
+
+      url,
+
+
+      source:
+
+        sourceNameFromUrl(
+          url
+        ),
+
+
+      rowsSeen:
+        0,
+
+
+      upserted:
+        0,
+
+
+      failed:
+        true,
+
+
+      latency,
+
+
+      error:
+
+        error.message ||
+
+        String(
+          error
+        )
+
+    };
+
+  }
+
+}
+
+
+/* =========================================================
+   CONCURRENCY POOL
+
+   Contoh:
+
+   100 feed
+   concurrency = 5
+
+   Worker hanya menjalankan maksimal 5 feed bersamaan.
+
+   Jadi tidak membuka 100 request sekaligus.
+========================================================= */
+
+async function runWithConcurrency(
+  items,
+  concurrency,
+  worker
+) {
+
+  const results =
+    new Array(
+      items.length
+    );
+
+
+  let nextIndex =
     0;
 
 
-  let failed =
-    0;
+  async function runWorker() {
+
+    while (
+      true
+    ) {
+
+      const currentIndex =
+        nextIndex;
 
 
-  let runId =
-    null;
+      nextIndex +=
+        1;
 
 
-  /*
-   * Create sync run
-   */
+      if (
+
+        currentIndex >=
+        items.length
+
+      ) {
+
+        return;
+
+      }
+
+
+      try {
+
+        results[
+          currentIndex
+        ] =
+
+          await worker(
+
+            items[
+              currentIndex
+            ]
+
+          );
+
+      }
+
+      catch (
+        error
+      ) {
+
+        results[
+          currentIndex
+        ] = {
+
+          ok:
+            false,
+
+          url:
+
+            items[
+              currentIndex
+            ],
+
+          failed:
+            true,
+
+          rowsSeen:
+            0,
+
+          upserted:
+            0,
+
+          error:
+
+            error.message ||
+
+            String(
+              error
+            )
+
+        };
+
+      }
+
+    }
+
+  }
+
+
+  const workers =
+    Array.from(
+
+      {
+
+        length:
+
+          Math.min(
+
+            concurrency,
+
+            items.length
+
+          )
+
+      },
+
+      () =>
+        runWorker()
+
+    );
+
+
+  await Promise.all(
+    workers
+  );
+
+
+  return results;
+
+}
+
+
+/* =========================================================
+   CREATE SYNC RUN
+========================================================= */
+
+async function createSyncRun() {
 
   try {
 
@@ -674,20 +1905,99 @@ export async function syncFeeds() {
 
       console.error(
 
-        '[SYNC] Tidak dapat membuat sync_runs:',
+        '[SYNC] createSyncRun failed:',
 
         error.message ||
         error
 
       );
 
+
+      return null;
+
     }
 
-    else {
 
-      runId =
-        data?.id ||
-        null;
+    return (
+      data?.id ||
+      null
+    );
+
+  }
+
+  catch (
+    error
+  ) {
+
+    console.error(
+
+      '[SYNC] createSyncRun exception:',
+
+      error.message ||
+      error
+
+    );
+
+
+    return null;
+
+  }
+
+}
+
+
+/* =========================================================
+   FINISH SYNC RUN
+========================================================= */
+
+async function finishSyncRun(
+  runId,
+  payload
+) {
+
+  if (
+    !runId
+  ) {
+
+    return;
+
+  }
+
+
+  try {
+
+    const {
+      error
+    } =
+
+      await supabase
+
+        .from(
+          'sync_runs'
+        )
+
+        .update(
+          payload
+        )
+
+        .eq(
+          'id',
+          runId
+        );
+
+
+    if (
+      error
+    ) {
+
+      console.error(
+
+        '[SYNC] finishSyncRun failed:',
+
+        error.message ||
+        error
+
+      );
 
     }
 
@@ -699,7 +2009,7 @@ export async function syncFeeds() {
 
     console.error(
 
-      '[SYNC] sync_runs error:',
+      '[SYNC] finishSyncRun exception:',
 
       error.message ||
       error
@@ -708,526 +2018,272 @@ export async function syncFeeds() {
 
   }
 
+}
+
+
+/* =========================================================
+   MAIN SYNC
+========================================================= */
+
+export async function syncFeeds() {
+
+  const syncStarted =
+    Date.now();
+
+
+  /* -------------------------------------------------------
+     NO FEEDS
+  ------------------------------------------------------- */
+
+  if (
+    feeds.length ===
+    0
+  ) {
+
+    return {
+
+      ok:
+        true,
+
+
+      skipped:
+        true,
+
+
+      reason:
+        'no_rss_feeds',
+
+
+      feeds:
+        0,
+
+
+      rowsSeen:
+        0,
+
+
+      upserted:
+        0,
+
+
+      failed:
+        0,
+
+
+      durationMs:
+
+        Date.now() -
+        syncStarted,
+
+
+      at:
+        nowIso()
+
+    };
+
+  }
+
+
+  /* -------------------------------------------------------
+     ACQUIRE LOCK
+  ------------------------------------------------------- */
+
+  const lock =
+
+    await safeRpc(
+
+      'acquire_sync_lock',
+
+      {
+
+        p_name:
+          'news-sync',
+
+        p_ttl_seconds:
+          SYNC_LOCK_TTL
+
+      }
+
+    );
+
+
+  if (
+    lock.error
+  ) {
+
+    throw lock.error;
+
+  }
+
+
+  if (
+    !lock.data
+  ) {
+
+    return {
+
+      ok:
+        true,
+
+
+      skipped:
+        true,
+
+
+      reason:
+        'sync_locked',
+
+
+      feeds:
+        feeds.length,
+
+
+      at:
+        nowIso()
+
+    };
+
+  }
+
+
+  let runId =
+    null;
+
 
   try {
 
-    for (
-      const url
-      of feeds
-    ) {
+    /* -----------------------------------------------------
+       CREATE RUN
+    ----------------------------------------------------- */
 
-      const sourceStart =
-        Date.now();
+    runId =
+      await createSyncRun();
 
 
-      try {
+    console.log(
 
-        const {
-          feed,
-          latency
-        } =
+      `[SYNC] Starting ${feeds.length} RSS feeds with concurrency ${RSS_CONCURRENCY}`
 
-          await fetchFeed(
-            url
+    );
+
+
+    /* -----------------------------------------------------
+       PARALLEL SYNC
+    ----------------------------------------------------- */
+
+    const results =
+
+      await runWithConcurrency(
+
+        feeds,
+
+        RSS_CONCURRENCY,
+
+        processFeed
+
+      );
+
+
+    /* -----------------------------------------------------
+       CALCULATE RESULT
+    ----------------------------------------------------- */
+
+    const rowsSeen =
+
+      results.reduce(
+
+        (
+          total,
+          result
+        ) =>
+
+          total +
+
+          Number(
+
+            result.rowsSeen ||
+            0
+
+          ),
+
+        0
+
+      );
+
+
+    const upserted =
+
+      results.reduce(
+
+        (
+          total,
+          result
+        ) =>
+
+          total +
+
+          Number(
+
+            result.upserted ||
+            0
+
+          ),
+
+        0
+
+      );
+
+
+    const failed =
+
+      results.filter(
+
+        result =>
+          result.failed
+
+      )
+
+        .length;
+
+
+    const successful =
+
+      results.filter(
+
+        result =>
+          result.ok
+
+      )
+
+        .length;
+
+
+    const durationMs =
+
+      Date.now() -
+      syncStarted;
+
+
+    const status =
+
+      failed === 0
+
+        ? 'success'
+
+        : (
+
+            successful > 0
+
+              ? 'partial'
+
+              : 'failed'
+
           );
 
 
-        const source =
-
-          (
-            feed.title ||
-            'RSS'
-          )
-
-            .slice(
-              0,
-              120
-            );
-
-
-        /*
-         * Update source status
-         */
-
-        await supabase
-
-          .from(
-            'news_sources'
-          )
-
-          .upsert(
-
-            {
-
-              name:
-                source,
-
-              feed_url:
-                url,
-
-              active:
-                true,
-
-              status:
-                'healthy',
-
-              success_count:
-                1,
-
-              last_success_at:
-
-                new Date()
-                  .toISOString(),
-
-              last_latency_ms:
-                latency,
-
-              updated_at:
-
-                new Date()
-                  .toISOString()
-
-            },
-
-            {
-
-              onConflict:
-                'feed_url'
-
-            }
-
-          );
-
-
-        /*
-         * Convert RSS items
-         */
-
-        const rows =
-
-          (
-            feed.items ||
-            []
-          )
-
-            .slice(
-              0,
-              80
-            )
-
-            .map(
-
-              item => {
-
-                const rawHtml =
-
-                  item['content:encoded'] ||
-
-                  item.content ||
-
-                  '';
-
-
-                const plain =
-
-                  stripHtml(
-
-                    item.contentSnippet ||
-
-                    rawHtml ||
-
-                    item.summary ||
-
-                    item.description ||
-
-                    ''
-
-                  );
-
-
-                const contentHtml =
-
-                  safeHtmlFromFeed(
-                    rawHtml
-                  );
-
-
-                const urlRaw =
-                  item.link;
-
-
-                const canonical =
-
-                  canonicalUrl(
-                    urlRaw
-                  );
-
-
-                const published =
-
-                  item.isoDate ||
-
-                  item.pubDate ||
-
-                  new Date()
-                    .toISOString();
-
-
-                const category =
-
-                  categoryFor(
-                    url,
-                    item.title
-                  );
-
-
-                return {
-
-                  title:
-
-                    (
-                      item.title ||
-                      ''
-                    )
-
-                      .trim()
-
-                      .slice(
-                        0,
-                        500
-                      ),
-
-
-                  summary:
-
-                    plain.slice(
-                      0,
-                      600
-                    ),
-
-
-                  content_html:
-
-                    contentHtml.length >=
-                    80
-
-                      ? contentHtml.slice(
-                          0,
-                          50000
-                        )
-
-                      : null,
-
-
-                  url:
-                    urlRaw,
-
-
-                  canonical_url:
-
-                    canonical ||
-                    null,
-
-
-                  content_fingerprint:
-
-                    fingerprintOf({
-
-                      title:
-                        item.title,
-
-                      summary:
-                        plain,
-
-                      source
-
-                    }),
-
-
-                  source_url:
-                    urlRaw,
-
-
-                  source,
-
-
-                  author_name:
-
-                    authorOf(
-                      item
-                    ),
-
-
-                  category,
-
-
-                  event_key:
-
-                    eventKeyOf({
-
-                      title:
-                        item.title,
-
-                      category
-
-                    }),
-
-
-                  editorial_status:
-                    'auto',
-
-
-                  image_url:
-
-                    imageOf(
-                      item
-                    ),
-
-
-                  published_at:
-                    published,
-
-
-                  content_source:
-
-                    contentHtml.length >=
-                    80
-
-                      ? 'rss'
-
-                      : 'snippet',
-
-
-                  content_available:
-
-                    contentHtml.length >=
-                    80,
-
-
-                  status:
-                    'published'
-
-                };
-
-              }
-
-            )
-
-            .filter(
-
-              item =>
-
-                item.title &&
-
-                item.url
-
-            );
-
-
-        rowsSeen +=
-          rows.length;
-
-
-        /*
-         * Save articles
-         */
-
-        if (
-          rows.length
-        ) {
-
-          const {
-            error
-          } =
-
-            await supabase
-
-              .from(
-                'articles'
-              )
-
-              .upsert(
-
-                rows,
-
-                {
-
-                  onConflict:
-                    'url',
-
-                  ignoreDuplicates:
-                    false
-
-                }
-
-              );
-
-
-          if (
-            error
-          ) {
-
-            throw error;
-
-          }
-
-
-          upserted +=
-            rows.length;
-
-        }
-
-      }
-
-      catch (
-        error
-      ) {
-
-        failed++;
-
-
-        console.error(
-
-          '[SYNC] RSS failed',
-
-          url,
-
-          error.message ||
-          error
-
-        );
-
-
-        try {
-
-          const {
-            data:
-              existing
-          } =
-
-            await supabase
-
-              .from(
-                'news_sources'
-              )
-
-              .select(
-                'failure_count'
-              )
-
-              .eq(
-                'feed_url',
-                url
-              )
-
-              .maybeSingle();
-
-
-          const failureCount =
-
-            Number(
-
-              existing?.failure_count ||
-
-              0
-
-            ) +
-
-            1;
-
-
-          await supabase
-
-            .from(
-              'news_sources'
-            )
-
-            .upsert(
-
-              {
-
-                name:
-
-                  new URL(
-                    url
-                  ).hostname,
-
-
-                feed_url:
-                  url,
-
-
-                active:
-                  true,
-
-
-                status:
-
-                  failureCount >=
-                  3
-
-                    ? 'unhealthy'
-
-                    : 'degraded',
-
-
-                failure_count:
-                  failureCount,
-
-
-                last_failure_at:
-
-                  new Date()
-                    .toISOString(),
-
-
-                last_latency_ms:
-
-                  Date.now() -
-                  sourceStart,
-
-
-                updated_at:
-
-                  new Date()
-                    .toISOString()
-
-              },
-
-              {
-
-                onConflict:
-                  'feed_url'
-
-              }
-
-            );
-
-        }
-
-        catch (
-          sourceError
-        ) {
-
-          console.error(
-
-            '[SYNC] Source status update failed:',
-
-            sourceError.message ||
-            sourceError
-
-          );
-
-        }
-
-      }
-
-    }
-
-
-    /*
-     * Optional rebuild RPCs
-     */
+    /* -----------------------------------------------------
+       OPTIONAL INTELLIGENCE
+    ----------------------------------------------------- */
 
     await safeRpc(
       'rebuild_article_intelligence'
@@ -1239,65 +2295,44 @@ export async function syncFeeds() {
     );
 
 
-    /*
-     * Finish sync run
-     */
+    /* -----------------------------------------------------
+       FINISH RUN
+    ----------------------------------------------------- */
 
-    if (
-      runId
-    ) {
+    await finishSyncRun(
 
-      await supabase
+      runId,
 
-        .from(
-          'sync_runs'
-        )
+      {
 
-        .update({
-
-          finished_at:
-
-            new Date()
-              .toISOString(),
+        finished_at:
+          nowIso(),
 
 
-          status:
-
-            failed === 0
-
-              ? 'success'
-
-              : (
-
-                  failed <
-                  feeds.length
-
-                    ? 'partial'
-
-                    : 'failed'
-
-                ),
+        status,
 
 
-          feeds_failed:
-            failed,
+        feeds_failed:
+          failed,
 
 
-          rows_seen:
-            rowsSeen,
+        rows_seen:
+          rowsSeen,
 
 
-          rows_upserted:
-            upserted
+        rows_upserted:
+          upserted
 
-        })
+      }
 
-        .eq(
-          'id',
-          runId
-        );
+    );
 
-    }
+
+    console.log(
+
+      `[SYNC] Finished: ${successful}/${feeds.length} feeds, ${upserted} articles, ${failed} failed, ${durationMs}ms`
+
+    );
 
 
     return {
@@ -1306,8 +2341,17 @@ export async function syncFeeds() {
         true,
 
 
+      status,
+
+
       feeds:
         feeds.length,
+
+
+      successful,
+
+
+      failed,
 
 
       rowsSeen,
@@ -1316,13 +2360,46 @@ export async function syncFeeds() {
       upserted,
 
 
-      failed,
+      concurrency:
+        RSS_CONCURRENCY,
+
+
+      maxItemsPerFeed:
+        MAX_ITEMS_PER_FEED,
+
+
+      durationMs,
 
 
       at:
+        nowIso(),
 
-        new Date()
-          .toISOString()
+
+      errors:
+
+        results
+
+          .filter(
+            result =>
+              result.failed
+          )
+
+          .slice(
+            0,
+            20
+          )
+
+          .map(
+            result => ({
+
+              url:
+                result.url,
+
+              error:
+                result.error
+
+            })
+          )
 
     };
 
@@ -1332,79 +2409,37 @@ export async function syncFeeds() {
     error
   ) {
 
-    /*
-     * Mark failed run
-     */
+    const durationMs =
 
-    if (
-      runId
-    ) {
+      Date.now() -
+      syncStarted;
 
-      try {
 
-        await supabase
+    await finishSyncRun(
 
-          .from(
-            'sync_runs'
+      runId,
+
+      {
+
+        finished_at:
+          nowIso(),
+
+
+        status:
+          'failed',
+
+
+        error_message:
+
+          error.message ||
+
+          String(
+            error
           )
 
-          .update({
-
-            finished_at:
-
-              new Date()
-                .toISOString(),
-
-
-            status:
-              'failed',
-
-
-            feeds_failed:
-              failed,
-
-
-            rows_seen:
-              rowsSeen,
-
-
-            rows_upserted:
-              upserted,
-
-
-            error_message:
-
-              error.message ||
-
-              String(
-                error
-              )
-
-          })
-
-          .eq(
-            'id',
-            runId
-          );
-
       }
 
-      catch (
-        updateError
-      ) {
-
-        console.error(
-
-          '[SYNC] Update sync run failed:',
-
-          updateError.message ||
-          updateError
-
-        );
-
-      }
-
-    }
+    );
 
 
     throw error;
@@ -1433,6 +2468,10 @@ export async function syncFeeds() {
 
 /* =========================================================
    DIRECT RUN
+
+   Bisa dijalankan:
+
+   node src/sync.js
 ========================================================= */
 
 if (
@@ -1446,7 +2485,23 @@ if (
 
   try {
 
-    await syncFeeds();
+    const result =
+      await syncFeeds();
+
+
+    console.log(
+
+      JSON.stringify(
+
+        result,
+
+        null,
+
+        2
+
+      )
+
+    );
 
   }
 
@@ -1455,7 +2510,11 @@ if (
   ) {
 
     console.error(
+
+      '[SYNC FATAL]',
+
       error
+
     );
 
 
