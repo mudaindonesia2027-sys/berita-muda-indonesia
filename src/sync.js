@@ -1,6 +1,7 @@
 import 'dotenv/config';
 
 import crypto from 'node:crypto';
+
 import Parser from 'rss-parser';
 
 import {
@@ -9,79 +10,223 @@ import {
 
 
 /* =========================================================
+   BERITA MUDA INDONESIA
+   RSS SYNC - PRODUCTION ADVANCED
+
+   Features:
+   - 50–100+ RSS feeds
+   - Priority processing
+   - Bounded parallel workers
+   - Adaptive safe concurrency
+   - Per-feed timeout
+   - Global sync deadline
+   - Retry + exponential backoff
+   - Circuit breaker
+   - Feed health monitoring
+   - Global run deduplication
+   - Batch database upsert
+   - Safe Supabase RPC handling
+   - Sync lock
+   - Detailed statistics
+   - Error isolation
+========================================================= */
+
+
+/* =========================================================
+   CONFIG HELPERS
+========================================================= */
+
+const envNumber =
+  (
+    name,
+    fallback,
+    min,
+    max
+  ) => {
+
+    const value =
+      Number(
+        process.env[name]
+      );
+
+    if (
+      !Number.isFinite(
+        value
+      )
+    ) {
+
+      return fallback;
+
+    }
+
+    return Math.max(
+      min,
+      Math.min(
+        value,
+        max
+      )
+    );
+
+  };
+
+
+/* =========================================================
    CONFIG
 ========================================================= */
 
+
+/*
+  RSS workers berjalan bersamaan.
+
+  Rekomendasi:
+  5 untuk Vercel awal.
+*/
+
 const RSS_CONCURRENCY =
-  Math.max(
+  envNumber(
+    'RSS_CONCURRENCY',
+    5,
     1,
-    Math.min(
-      Number(
-        process.env.RSS_CONCURRENCY
-      ) || 5,
-      10
-    )
+    10
   );
 
+
+/*
+  Timeout setiap RSS.
+*/
 
 const RSS_TIMEOUT_MS =
-  Math.max(
+  envNumber(
+    'RSS_TIMEOUT_MS',
+    12000,
     3000,
-    Math.min(
-      Number(
-        process.env.RSS_TIMEOUT_MS
-      ) || 12000,
-      30000
-    )
+    30000
   );
 
+
+/*
+  Retry maksimal.
+*/
 
 const RSS_RETRIES =
-  Math.max(
+  envNumber(
+    'RSS_RETRIES',
+    2,
     0,
-    Math.min(
-      Number(
-        process.env.RSS_RETRIES
-      ) || 2,
-      3
-    )
+    3
   );
 
+
+/*
+  Maksimal artikel diambil dari satu feed.
+*/
 
 const MAX_ITEMS_PER_FEED =
-  Math.max(
+  envNumber(
+    'MAX_ITEMS_PER_FEED',
+    10,
     1,
-    Math.min(
-      Number(
-        process.env.MAX_ITEMS_PER_FEED
-      ) || 15,
-      50
-    )
+    50
   );
 
+
+/*
+  Maksimal waktu seluruh sync.
+
+  Harus disesuaikan dengan batas
+  serverless function Anda.
+
+  Default 45 detik.
+*/
+
+const GLOBAL_SYNC_TIMEOUT_MS =
+  envNumber(
+    'GLOBAL_SYNC_TIMEOUT_MS',
+    45000,
+    10000,
+    300000
+  );
+
+
+/*
+  Berhenti mengambil feed baru
+  sebelum batas waktu benar-benar habis.
+*/
+
+const GLOBAL_TIMEOUT_BUFFER_MS =
+  envNumber(
+    'GLOBAL_TIMEOUT_BUFFER_MS',
+    5000,
+    1000,
+    30000
+  );
+
+
+/*
+  TTL lock.
+
+  15 menit.
+*/
 
 const SYNC_LOCK_TTL =
-  Math.max(
+  envNumber(
+    'SYNC_LOCK_TTL',
+    900,
     120,
-    Math.min(
-      Number(
-        process.env.SYNC_LOCK_TTL
-      ) || 840,
-      3600
-    )
+    3600
   );
 
+
+/*
+  Jika feed gagal sebanyak angka ini,
+  feed dianggap unhealthy.
+
+  Pada sync berikutnya feed unhealthy
+  akan dilewati sementara.
+*/
+
+const CIRCUIT_BREAKER_FAILURES =
+  envNumber(
+    'CIRCUIT_BREAKER_FAILURES',
+    3,
+    2,
+    20
+  );
+
+
+/*
+  Batas batch database.
+*/
+
+const DB_BATCH_SIZE =
+  envNumber(
+    'DB_BATCH_SIZE',
+    50,
+    10,
+    200
+);
+
+
+/* =========================================================
+   RSS PARSER
+========================================================= */
 
 const parser =
   new Parser({
+
     timeout:
       RSS_TIMEOUT_MS,
 
+
     headers: {
+
       'User-Agent':
-        'BeritaMudaIndonesia/5.3 RSS Sync'
+
+        'BeritaMudaIndonesia/6.0 (+news aggregator)'
+
     }
-  );
+
+  });
 
 
 /* =========================================================
@@ -89,35 +234,40 @@ const parser =
 ========================================================= */
 
 const feeds =
-  (
-    process.env.RSS_FEEDS ||
-    ''
-  )
+  [
 
-    .split(',')
+    ...new Set(
 
-    .map(
-      value =>
-        value.trim()
+      (
+        process.env.RSS_FEEDS ||
+        ''
+      )
+
+        .split(',')
+
+        .map(
+          value =>
+            value.trim()
+        )
+
+        .filter(
+          Boolean
+        )
+
     )
 
-    .filter(Boolean)
-
-    .filter(
-      (
-        value,
-        index,
-        array
-      ) =>
-        array.indexOf(
-          value
-        ) === index
-    );
+  ];
 
 
 /* =========================================================
-   HELPERS
+   TIME
 ========================================================= */
+
+const nowIso =
+  () =>
+    new Date()
+      .toISOString();
+
 
 const sleep =
   milliseconds =>
@@ -131,72 +281,18 @@ const sleep =
     );
 
 
-const nowIso =
-  () =>
-    new Date()
-      .toISOString();
-
-
-function withTimeout(
-  promise,
-  milliseconds,
-  label = 'Operation'
-) {
-
-  let timer;
-
-
-  const timeout =
-    new Promise(
-      (
-        resolve,
-        reject
-      ) => {
-
-        timer =
-          setTimeout(
-            () => {
-
-              reject(
-
-                new Error(
-                  `${label} timeout after ${milliseconds}ms`
-                )
-
-              );
-
-            },
-
-            milliseconds
-          );
-
-      }
-    );
-
-
-  return Promise
-
-    .race([
-      promise,
-      timeout
-    ])
-
-    .finally(
-      () => {
-
-        clearTimeout(
-          timer
-        );
-
-      }
-    );
-
-}
-
+/* =========================================================
+   STRING HELPERS
+========================================================= */
 
 const stripHtml =
-  (value = '') =>
-    String(value)
+  (
+    value = ''
+  ) =>
+
+    String(
+      value
+    )
 
       .replace(
         /<script[\s\S]*?<\/script>/gi,
@@ -242,8 +338,13 @@ const stripHtml =
 
 
 const safeHtmlFromFeed =
-  (value = '') =>
-    String(value)
+  (
+    raw = ''
+  ) =>
+
+    String(
+      raw
+    )
 
       .replace(
         /<script[\s\S]*?<\/script>/gi,
@@ -268,14 +369,44 @@ const safeHtmlFromFeed =
       .trim();
 
 
+const normalizeTitle =
+  (
+    value = ''
+  ) =>
+
+    stripHtml(
+      value
+    )
+
+      .toLowerCase()
+
+      .replace(
+        /[^\p{L}\p{N}\s]/gu,
+        ' '
+      )
+
+      .replace(
+        /\s+/g,
+        ' '
+      )
+
+      .trim();
+
+
+/* =========================================================
+   URL NORMALIZATION
+========================================================= */
+
 const canonicalUrl =
-  (value = '') => {
+  (
+    raw = ''
+  ) => {
 
     try {
 
       const url =
         new URL(
-          value
+          raw
         );
 
 
@@ -283,51 +414,74 @@ const canonicalUrl =
         '';
 
 
-      [
-        'utm_source',
-        'utm_medium',
-        'utm_campaign',
-        'utm_term',
-        'utm_content',
-        'fbclid',
-        'gclid',
-        'mc_cid',
-        'mc_eid'
-      ]
+      const trackingKeys =
+        [
 
-        .forEach(
-          key =>
-            url.searchParams.delete(
-              key
+          'utm_source',
+
+          'utm_medium',
+
+          'utm_campaign',
+
+          'utm_term',
+
+          'utm_content',
+
+          'fbclid',
+
+          'gclid',
+
+          'mc_cid',
+
+          'mc_eid',
+
+          'igshid'
+
+        ];
+
+
+      for (
+
+        const key
+        of trackingKeys
+
+      ) {
+
+        url.searchParams.delete(
+          key
+        );
+
+      }
+
+
+      for (
+
+        const key
+        of [
+
+          ...url.searchParams.keys()
+
+        ]
+
+      ) {
+
+        if (
+
+          key
+            .toLowerCase()
+            .startsWith(
+              'utm_'
             )
-        );
 
+        ) {
 
-      [
-        ...url.searchParams.keys()
-      ]
+          url.searchParams.delete(
+            key
+          );
 
-        .forEach(
-          key => {
+        }
 
-            if (
-
-              key
-                .toLowerCase()
-                .startsWith(
-                  'utm_'
-                )
-
-            ) {
-
-              url.searchParams.delete(
-                key
-              );
-
-            }
-
-          }
-        );
+      }
 
 
       url.hostname =
@@ -358,7 +512,7 @@ const canonicalUrl =
     catch {
 
       return String(
-        value ||
+        raw ||
         ''
       )
 
@@ -369,26 +523,9 @@ const canonicalUrl =
   };
 
 
-const normalizeTitle =
-  (value = '') =>
-    stripHtml(
-      value
-    )
-
-      .toLowerCase()
-
-      .replace(
-        /[^\p{L}\p{N}\s]/gu,
-        ' '
-      )
-
-      .replace(
-        /\s+/g,
-        ' '
-      )
-
-      .trim();
-
+/* =========================================================
+   FINGERPRINT
+========================================================= */
 
 const fingerprintOf =
   ({
@@ -414,6 +551,17 @@ const fingerprintOf =
       );
 
 
+/* =========================================================
+   EVENT KEY
+
+   Sengaja tidak menggunakan source.
+
+   Tujuannya:
+   berita dari banyak publisher tentang
+   peristiwa yang sama bisa memiliki
+   event key yang sama.
+========================================================= */
+
 const eventKeyOf =
   ({
     title,
@@ -429,9 +577,19 @@ const eventKeyOf =
       .update(
 
         `${normalizeTitle(title)
+
           .split(' ')
-          .slice(0, 14)
-          .join(' ')}|${category || ''}`
+
+          .slice(
+            0,
+            14
+          )
+
+          .join(
+            ' '
+          )
+
+        }|${category || ''}`
 
       )
 
@@ -445,6 +603,10 @@ const eventKeyOf =
       );
 
 
+/* =========================================================
+   CATEGORY
+========================================================= */
+
 const categoryFor =
   (
     url,
@@ -453,133 +615,209 @@ const categoryFor =
 
     const text =
       `${url} ${title}`
-
         .toLowerCase();
 
 
-    const categories = [
+    const categories =
+      [
 
-      {
-        category:
-          'TEKNOLOGI',
+        {
+          category:
+            'POLITIK',
 
-        keywords: [
-          'teknologi',
-          'technology',
-          'digital',
-          'internet',
-          'gadget',
-          'ai ',
-          'artificial intelligence',
-          'startup'
-        ]
-      },
+          keywords:
+            [
 
-      {
-        category:
-          'OLAHRAGA',
+              'politik',
 
-        keywords: [
-          'olahraga',
-          'sport',
-          'bola',
-          'sepak bola',
-          'football',
-          'liga',
-          'badminton',
-          'bulutangkis'
-        ]
-      },
+              'pemilu',
 
-      {
-        category:
-          'EKONOMI',
+              'pilkada',
 
-        keywords: [
-          'ekonomi',
-          'bisnis',
-          'keuangan',
-          'bank',
-          'saham',
-          'investasi',
-          'finansial'
-        ]
-      },
+              'partai',
 
-      {
-        category:
-          'POLITIK',
+              'presiden',
 
-        keywords: [
-          'politik',
-          'pemilu',
-          'pilkada',
-          'dpr',
-          'presiden',
-          'partai'
-        ]
-      },
+              'dpr',
 
-      {
-        category:
-          'HUKUM',
+              'pemerintah'
 
-        keywords: [
-          'hukum',
-          'pengadilan',
-          'kejaksaan',
-          'korupsi',
-          'tersangka',
-          'polisi'
-        ]
-      },
+            ]
+        },
 
-      {
-        category:
-          'HIBURAN',
 
-        keywords: [
-          'hiburan',
-          'film',
-          'musik',
-          'seleb',
-          'artis',
-          'entertainment'
-        ]
-      },
+        {
+          category:
+            'HUKUM',
 
-      {
-        category:
-          'INTERNASIONAL',
+          keywords:
+            [
 
-        keywords: [
-          'internasional',
-          'international',
-          'world',
-          'dunia'
-        ]
-      },
+              'hukum',
 
-      {
-        category:
-          'LIFESTYLE',
+              'pengadilan',
 
-        keywords: [
-          'lifestyle',
-          'gaya hidup',
-          'kuliner',
-          'fashion',
-          'wisata',
-          'travel'
-        ]
-      }
+              'kejaksaan',
 
-    ];
+              'korupsi',
+
+              'tersangka',
+
+              'kepolisian',
+
+              'polisi'
+
+            ]
+        },
+
+
+        {
+          category:
+            'EKONOMI',
+
+          keywords:
+            [
+
+              'ekonomi',
+
+              'bisnis',
+
+              'keuangan',
+
+              'bank',
+
+              'saham',
+
+              'investasi',
+
+              'finansial'
+
+            ]
+        },
+
+
+        {
+          category:
+            'TEKNOLOGI',
+
+          keywords:
+            [
+
+              'teknologi',
+
+              'technology',
+
+              'digital',
+
+              'internet',
+
+              'gadget',
+
+              'startup',
+
+              'artificial intelligence'
+
+            ]
+        },
+
+
+        {
+          category:
+            'OLAHRAGA',
+
+          keywords:
+            [
+
+              'olahraga',
+
+              'sport',
+
+              'bola',
+
+              'football',
+
+              'sepak bola',
+
+              'badminton',
+
+              'bulutangkis'
+
+            ]
+        },
+
+
+        {
+          category:
+            'INTERNASIONAL',
+
+          keywords:
+            [
+
+              'internasional',
+
+              'international',
+
+              'world',
+
+              'dunia'
+
+            ]
+        },
+
+
+        {
+          category:
+            'HIBURAN',
+
+          keywords:
+            [
+
+              'hiburan',
+
+              'film',
+
+              'musik',
+
+              'artis',
+
+              'seleb',
+
+              'entertainment'
+
+            ]
+        },
+
+
+        {
+          category:
+            'LIFESTYLE',
+
+          keywords:
+            [
+
+              'lifestyle',
+
+              'gaya hidup',
+
+              'kuliner',
+
+              'fashion',
+
+              'wisata',
+
+              'travel'
+
+            ]
+        }
+
+      ];
 
 
     for (
+
       const item
       of categories
+
     ) {
 
       if (
@@ -604,6 +842,10 @@ const categoryFor =
 
   };
 
+
+/* =========================================================
+   AUTHOR
+========================================================= */
 
 const authorOf =
   item =>
@@ -634,24 +876,29 @@ const authorOf =
       null;
 
 
+/* =========================================================
+   IMAGE
+========================================================= */
+
 const imageOf =
   item => {
 
-    const candidates = [
+    const candidates =
+      [
 
-      item.enclosure?.url,
+        item.enclosure?.url,
 
-      item['media:content']?.url,
+        item['media:content']?.url,
 
-      item['media:thumbnail']?.url,
+        item['media:thumbnail']?.url,
 
-      item.itunes?.image,
+        item.itunes?.image,
 
-      item.image?.url,
+        item.image?.url,
 
-      item.image
+        item.image
 
-    ];
+      ];
 
 
     return (
@@ -659,8 +906,9 @@ const imageOf =
       candidates.find(
 
         value =>
+
           typeof value ===
-            'string' &&
+          'string' &&
 
           /^https?:\/\//i.test(
             value
@@ -677,14 +925,22 @@ const imageOf =
   };
 
 
+/* =========================================================
+   SOURCE NAME
+========================================================= */
+
 const sourceNameFromUrl =
-  value => {
+  (
+    value
+  ) => {
 
     try {
 
       return new URL(
         value
-      ).hostname
+      )
+
+        .hostname
 
         .replace(
           /^www\./,
@@ -703,15 +959,213 @@ const sourceNameFromUrl =
 
 
 /* =========================================================
+   PRIORITY SYSTEM
+
+   Urutan:
+
+   1. PURWOREJO
+   2. JAWA TENGAH
+   3. NASIONAL
+   4. INTERNASIONAL
+
+   Ini membuat sumber lokal diproses lebih awal.
+========================================================= */
+
+const feedPriority =
+  (
+    url
+  ) => {
+
+    const text =
+      String(
+        url
+      )
+        .toLowerCase();
+
+
+    /*
+      PRIORITAS 1
+      PURWOREJO
+    */
+
+    if (
+
+      text.includes(
+        'purworejo'
+      ) ||
+
+      text.includes(
+        'bagelen'
+      ) ||
+
+      text.includes(
+        'kutoarjo'
+      ) ||
+
+      text.includes(
+        'pituruh'
+      ) ||
+
+      text.includes(
+        'bener'
+      )
+
+    ) {
+
+      return 1;
+
+    }
+
+
+    /*
+      PRIORITAS 2
+      JAWA TENGAH
+    */
+
+    if (
+
+      text.includes(
+        'jateng'
+      ) ||
+
+      text.includes(
+        'jawa+tengah'
+      ) ||
+
+      text.includes(
+        'jawa-tengah'
+      ) ||
+
+      text.includes(
+        'semarang'
+      ) ||
+
+      text.includes(
+        'solo'
+      ) ||
+
+      text.includes(
+        'surakarta'
+      ) ||
+
+      text.includes(
+        'magelang'
+      ) ||
+
+      text.includes(
+        'kebumen'
+      ) ||
+
+      text.includes(
+        'wonosobo'
+      ) ||
+
+      text.includes(
+        'temanggung'
+      ) ||
+
+      text.includes(
+        'banyumas'
+      ) ||
+
+      text.includes(
+        'cilacap'
+      )
+
+    ) {
+
+      return 2;
+
+    }
+
+
+    /*
+      PRIORITAS 4
+      INTERNASIONAL
+    */
+
+    if (
+
+      text.includes(
+        'bbc.'
+      ) ||
+
+      text.includes(
+        'aljazeera'
+      ) ||
+
+      text.includes(
+        'dw.com'
+      ) ||
+
+      text.includes(
+        'cna.'
+      ) ||
+
+      text.includes(
+        'world'
+      ) ||
+
+      text.includes(
+        'international'
+      )
+
+    ) {
+
+      return 4;
+
+    }
+
+
+    /*
+      PRIORITAS 3
+      NASIONAL
+    */
+
+    return 3;
+
+  };
+
+
+/* =========================================================
+   SORT FEEDS
+========================================================= */
+
+const prioritizedFeeds =
+  [
+    ...feeds
+  ]
+
+    .sort(
+
+      (
+        a,
+        b
+      ) =>
+
+        feedPriority(
+          a
+        )
+
+        -
+
+        feedPriority(
+          b
+        )
+
+    );
+
+
+/* =========================================================
    SAFE RPC
 
    PENTING:
-   JANGAN gunakan:
+
+   Jangan:
 
    supabase.rpc(...).catch(...)
 
-   Karena Supabase Query Builder bukan Promise biasa
-   sampai di-await.
+   Gunakan await dulu.
 ========================================================= */
 
 async function safeRpc(
@@ -787,7 +1241,169 @@ async function safeRpc(
 
 
 /* =========================================================
+   GET SOURCE HEALTH
+
+   Menggunakan tabel news_sources
+   yang sudah dipakai kode lama.
+========================================================= */
+
+async function getFeedHealth(
+  urls
+) {
+
+  const map =
+    new Map();
+
+
+  if (
+    !urls.length
+  ) {
+
+    return map;
+
+  }
+
+
+  try {
+
+    const {
+      data,
+      error
+    } =
+
+      await supabase
+
+        .from(
+          'news_sources'
+        )
+
+        .select(
+          `
+          feed_url,
+          status,
+          failure_count,
+          last_failure_at,
+          last_success_at
+          `
+        )
+
+        .in(
+          'feed_url',
+          urls
+        );
+
+
+    if (
+      error
+    ) {
+
+      console.error(
+
+        '[SYNC] Feed health read failed:',
+
+        error.message ||
+        error
+
+      );
+
+
+      return map;
+
+    }
+
+
+    for (
+
+      const row
+      of data ||
+      []
+
+    ) {
+
+      map.set(
+
+        row.feed_url,
+
+        row
+
+      );
+
+    }
+
+  }
+
+  catch (
+    error
+  ) {
+
+    console.error(
+
+      '[SYNC] Feed health exception:',
+
+      error.message ||
+      error
+
+    );
+
+  }
+
+
+  return map;
+
+}
+
+
+/* =========================================================
+   CIRCUIT BREAKER
+
+   Feed dengan kegagalan berulang
+   akan dilewati.
+
+   Feed bisa dicoba lagi jika:
+   - pernah healthy lagi
+   - failure_count belum melewati batas
+========================================================= */
+
+const shouldSkipByCircuitBreaker =
+  (
+    health
+  ) => {
+
+    if (
+      !health
+    ) {
+
+      return false;
+
+    }
+
+
+    const failures =
+      Number(
+        health.failure_count ||
+        0
+      );
+
+
+    return (
+
+      health.status ===
+      'unhealthy'
+
+      &&
+
+      failures >=
+      CIRCUIT_BREAKER_FAILURES
+
+    );
+
+  };
+
+
+/* =========================================================
    FETCH FEED
+
+   Retry + exponential backoff.
 ========================================================= */
 
 async function fetchFeed(
@@ -816,16 +1432,8 @@ async function fetchFeed(
 
       const feed =
 
-        await withTimeout(
-
-          parser.parseURL(
-            url
-          ),
-
-          RSS_TIMEOUT_MS,
-
-          `RSS ${url}`
-
+        await parser.parseURL(
+          url
         );
 
 
@@ -833,10 +1441,12 @@ async function fetchFeed(
 
         feed,
 
+
         latency:
 
           Date.now() -
           started,
+
 
         attempts:
 
@@ -866,14 +1476,14 @@ async function fetchFeed(
 
           Math.min(
 
-            1000 *
+            750 *
 
             (
               2 **
               attempt
             ),
 
-            4000
+            5000
 
           );
 
@@ -895,7 +1505,7 @@ async function fetchFeed(
 
 
 /* =========================================================
-   BUILD ARTICLE ROW
+   BUILD ARTICLE
 ========================================================= */
 
 function buildArticleRow(
@@ -941,7 +1551,7 @@ function buildArticleRow(
     );
 
 
-  const urlRaw =
+  const rawUrl =
 
     String(
 
@@ -959,15 +1569,18 @@ function buildArticleRow(
   const canonical =
 
     canonicalUrl(
-      urlRaw
+      rawUrl
     );
 
 
   const title =
 
     String(
+
       item.title ||
+
       ''
+
     )
 
       .trim()
@@ -978,15 +1591,31 @@ function buildArticleRow(
       );
 
 
+  if (
+
+    !title ||
+
+    !rawUrl
+
+  ) {
+
+    return null;
+
+  }
+
+
   const category =
 
     categoryFor(
+
       feedUrl,
+
       title
+
     );
 
 
-  const published =
+  const publishedAt =
 
     item.isoDate ||
 
@@ -1022,7 +1651,7 @@ function buildArticleRow(
 
 
     url:
-      urlRaw,
+      rawUrl,
 
 
     canonical_url:
@@ -1046,7 +1675,7 @@ function buildArticleRow(
 
 
     source_url:
-      urlRaw,
+      rawUrl,
 
 
     source,
@@ -1085,7 +1714,7 @@ function buildArticleRow(
 
 
     published_at:
-      published,
+      publishedAt,
 
 
     content_source:
@@ -1116,72 +1745,105 @@ function buildArticleRow(
    UPDATE SOURCE SUCCESS
 ========================================================= */
 
-async function updateSourceSuccess(
+async function markFeedSuccess(
   {
-    source,
     url,
+    source,
     latency
   }
 ) {
 
-  const timestamp =
-    nowIso();
+  try {
+
+    const {
+      error
+    } =
+
+      await supabase
+
+        .from(
+          'news_sources'
+        )
+
+        .upsert(
+
+          {
+
+            name:
+              source,
 
 
-  const {
-    error
-  } =
+            feed_url:
+              url,
 
-    await supabase
 
-      .from(
-        'news_sources'
-      )
+            active:
+              true,
 
-      .upsert(
 
-        {
+            status:
+              'healthy',
 
-          name:
-            source,
 
-          feed_url:
-            url,
+            /*
+              Reset failure count setelah sukses.
+            */
 
-          active:
-            true,
+            failure_count:
+              0,
 
-          status:
-            'healthy',
 
-          last_success_at:
-            timestamp,
+            success_count:
+              1,
 
-          last_latency_ms:
-            latency,
 
-          updated_at:
-            timestamp
+            last_success_at:
+              nowIso(),
 
-        },
 
-        {
+            last_latency_ms:
+              latency,
 
-          onConflict:
-            'feed_url'
 
-        }
+            updated_at:
+              nowIso()
+
+          },
+
+          {
+
+            onConflict:
+              'feed_url'
+
+          }
+
+        );
+
+
+    if (
+      error
+    ) {
+
+      console.error(
+
+        '[SYNC] markFeedSuccess failed:',
+
+        error.message ||
+        error
 
       );
 
+    }
 
-  if (
+  }
+
+  catch (
     error
   ) {
 
     console.error(
 
-      '[SYNC] Source success update failed:',
+      '[SYNC] markFeedSuccess exception:',
 
       error.message ||
       error
@@ -1197,7 +1859,7 @@ async function updateSourceSuccess(
    UPDATE SOURCE FAILURE
 ========================================================= */
 
-async function updateSourceFailure(
+async function markFeedFailure(
   {
     url,
     latency
@@ -1237,7 +1899,7 @@ async function updateSourceFailure(
 
       console.error(
 
-        '[SYNC] Read source failure count failed:',
+        '[SYNC] Failure count read failed:',
 
         existingError.message ||
         existingError
@@ -1255,13 +1917,21 @@ async function updateSourceFailure(
 
         0
 
-      ) +
+      )
+
+      +
 
       1;
 
 
-    const timestamp =
-      nowIso();
+    const status =
+
+      failureCount >=
+      CIRCUIT_BREAKER_FAILURES
+
+        ? 'unhealthy'
+
+        : 'degraded';
 
 
     const {
@@ -1293,14 +1963,7 @@ async function updateSourceFailure(
               true,
 
 
-            status:
-
-              failureCount >=
-              3
-
-                ? 'unhealthy'
-
-                : 'degraded',
+            status,
 
 
             failure_count:
@@ -1308,7 +1971,7 @@ async function updateSourceFailure(
 
 
             last_failure_at:
-              timestamp,
+              nowIso(),
 
 
             last_latency_ms:
@@ -1316,7 +1979,7 @@ async function updateSourceFailure(
 
 
             updated_at:
-              timestamp
+              nowIso()
 
           },
 
@@ -1336,7 +1999,7 @@ async function updateSourceFailure(
 
       console.error(
 
-        '[SYNC] Source failure update failed:',
+        '[SYNC] markFeedFailure failed:',
 
         error.message ||
         error
@@ -1353,7 +2016,7 @@ async function updateSourceFailure(
 
     console.error(
 
-      '[SYNC] updateSourceFailure failed:',
+      '[SYNC] markFeedFailure exception:',
 
       error.message ||
       error
@@ -1366,30 +2029,15 @@ async function updateSourceFailure(
 
 
 /* =========================================================
-   UPSERT ARTICLES
+   SAVE ARTICLES
 
-   Dibagi per batch supaya request database tidak terlalu besar.
+   Batch upsert agar database
+   tidak menerima terlalu banyak row sekaligus.
 ========================================================= */
 
 async function saveArticles(
   rows
 ) {
-
-  if (
-    !rows.length
-  ) {
-
-    return {
-      saved:
-        0
-    };
-
-  }
-
-
-  const BATCH_SIZE =
-    100;
-
 
   let saved =
     0;
@@ -1403,7 +2051,7 @@ async function saveArticles(
     rows.length;
 
     index +=
-      BATCH_SIZE
+      DB_BATCH_SIZE
 
   ) {
 
@@ -1414,7 +2062,7 @@ async function saveArticles(
         index,
 
         index +
-        BATCH_SIZE
+        DB_BATCH_SIZE
 
       );
 
@@ -1461,21 +2109,18 @@ async function saveArticles(
   }
 
 
-  return {
-    saved
-  };
+  return saved;
 
 }
 
 
 /* =========================================================
    PROCESS ONE FEED
-
-   Satu feed tidak boleh menghentikan seluruh proses sync.
 ========================================================= */
 
 async function processFeed(
-  url
+  url,
+  runState
 ) {
 
   const started =
@@ -1515,22 +2160,34 @@ async function processFeed(
         );
 
 
-    await updateSourceSuccess({
+    /*
+      Update health terlebih dahulu.
+    */
 
-      source,
+    await markFeedSuccess({
 
       url,
+
+      source,
 
       latency
 
     });
 
 
-    const uniqueUrls =
+    const rows =
+      [];
+
+
+    const localUrls =
       new Set();
 
 
-    const rows =
+    const localFingerprints =
+      new Set();
+
+
+    const items =
 
       (
         feed.items ||
@@ -1540,66 +2197,130 @@ async function processFeed(
         .slice(
           0,
           MAX_ITEMS_PER_FEED
-        )
-
-        .map(
-
-          item =>
-            buildArticleRow(
-
-              item,
-
-              url,
-
-              source
-
-            )
-
-        )
-
-        .filter(
-
-          item => {
-
-            if (
-
-              !item.title ||
-
-              !item.url
-
-            ) {
-
-              return false;
-
-            }
+        );
 
 
-            if (
+    for (
 
-              uniqueUrls.has(
-                item.url
-              )
+      const item
+      of items
 
-            ) {
+    ) {
 
-              return false;
+      const row =
 
-            }
+        buildArticleRow(
 
+          item,
 
-            uniqueUrls.add(
-              item.url
-            );
+          url,
 
-
-            return true;
-
-          }
+          source
 
         );
 
 
-    const saveResult =
+      if (
+        !row
+      ) {
+
+        continue;
+
+      }
+
+
+      /*
+        DEDUP DALAM FEED
+      */
+
+      if (
+
+        localUrls.has(
+          row.canonical_url
+        )
+
+      ) {
+
+        continue;
+
+      }
+
+
+      if (
+
+        localFingerprints.has(
+          row.content_fingerprint
+        )
+
+      ) {
+
+        continue;
+
+      }
+
+
+      /*
+        GLOBAL RUN DEDUP
+
+        Mencegah artikel sama dari
+        banyak feed diproses berulang
+        dalam satu sync.
+      */
+
+      if (
+
+        runState.seenUrls.has(
+          row.canonical_url
+        )
+
+      ) {
+
+        continue;
+
+      }
+
+
+      if (
+
+        runState.seenFingerprints.has(
+          row.content_fingerprint
+        )
+
+      ) {
+
+        continue;
+
+      }
+
+
+      localUrls.add(
+        row.canonical_url
+      );
+
+
+      localFingerprints.add(
+        row.content_fingerprint
+      );
+
+
+      runState.seenUrls.add(
+        row.canonical_url
+      );
+
+
+      runState.seenFingerprints.add(
+        row.content_fingerprint
+      );
+
+
+      rows.push(
+        row
+      );
+
+    }
+
+
+    const saved =
 
       await saveArticles(
         rows
@@ -1618,13 +2339,25 @@ async function processFeed(
       source,
 
 
+      priority:
+
+        feedPriority(
+          url
+        ),
+
+
+      items:
+
+        items.length,
+
+
       rowsSeen:
+
         rows.length,
 
 
       upserted:
-
-        saveResult.saved,
+        saved,
 
 
       failed:
@@ -1645,6 +2378,7 @@ async function processFeed(
   ) {
 
     const latency =
+
       Date.now() -
       started;
 
@@ -1661,7 +2395,7 @@ async function processFeed(
     );
 
 
-    await updateSourceFailure({
+    await markFeedFailure({
 
       url,
 
@@ -1676,6 +2410,10 @@ async function processFeed(
         false,
 
 
+      failed:
+        true,
+
+
       url,
 
 
@@ -1686,16 +2424,19 @@ async function processFeed(
         ),
 
 
+      priority:
+
+        feedPriority(
+          url
+        ),
+
+
       rowsSeen:
         0,
 
 
       upserted:
         0,
-
-
-      failed:
-        true,
 
 
       latency,
@@ -1717,41 +2458,55 @@ async function processFeed(
 
 
 /* =========================================================
-   CONCURRENCY POOL
+   CONCURRENCY WORKER POOL
 
    Contoh:
 
-   100 feed
+   100 feeds
    concurrency = 5
 
-   Worker hanya menjalankan maksimal 5 feed bersamaan.
-
-   Jadi tidak membuka 100 request sekaligus.
+   Maksimal hanya 5 feed aktif
+   bersamaan.
 ========================================================= */
 
-async function runWithConcurrency(
+async function runWorkerPool(
   items,
+  worker,
   concurrency,
-  worker
+  shouldStop
 ) {
 
   const results =
-    new Array(
-      items.length
-    );
+    [];
 
 
   let nextIndex =
     0;
 
 
-  async function runWorker() {
+  async function workerLoop() {
 
     while (
       true
     ) {
 
-      const currentIndex =
+      /*
+        Stop mengambil pekerjaan baru
+        jika global deadline hampir habis.
+      */
+
+      if (
+
+        shouldStop()
+
+      ) {
+
+        return;
+
+      }
+
+
+      const index =
         nextIndex;
 
 
@@ -1761,7 +2516,7 @@ async function runWithConcurrency(
 
       if (
 
-        currentIndex >=
+        index >=
         items.length
 
       ) {
@@ -1771,19 +2526,24 @@ async function runWithConcurrency(
       }
 
 
+      const item =
+        items[
+          index
+        ];
+
+
       try {
 
-        results[
-          currentIndex
-        ] =
+        const result =
 
           await worker(
-
-            items[
-              currentIndex
-            ]
-
+            item
           );
+
+
+        results.push(
+          result
+        );
 
       }
 
@@ -1791,27 +2551,27 @@ async function runWithConcurrency(
         error
       ) {
 
-        results[
-          currentIndex
-        ] = {
+        results.push({
 
           ok:
             false,
 
-          url:
-
-            items[
-              currentIndex
-            ],
 
           failed:
             true,
 
+
+          url:
+            item,
+
+
           rowsSeen:
             0,
 
+
           upserted:
             0,
+
 
           error:
 
@@ -1821,7 +2581,7 @@ async function runWithConcurrency(
               error
             )
 
-        };
+        });
 
       }
 
@@ -1830,27 +2590,37 @@ async function runWithConcurrency(
   }
 
 
-  const workers =
-    Array.from(
+  const workerCount =
 
-      {
+    Math.min(
 
-        length:
+      concurrency,
 
-          Math.min(
-
-            concurrency,
-
-            items.length
-
-          )
-
-      },
-
-      () =>
-        runWorker()
+      items.length
 
     );
+
+
+  const workers =
+    [];
+
+
+  for (
+
+    let index = 0;
+
+    index <
+    workerCount;
+
+    index++
+
+  ) {
+
+    workers.push(
+      workerLoop()
+    );
+
+  }
 
 
   await Promise.all(
@@ -1858,7 +2628,23 @@ async function runWithConcurrency(
   );
 
 
-  return results;
+  return {
+
+    results,
+
+
+    remaining:
+
+      Math.max(
+
+        0,
+
+        items.length -
+        nextIndex
+
+      )
+
+  };
 
 }
 
@@ -1867,7 +2653,9 @@ async function runWithConcurrency(
    CREATE SYNC RUN
 ========================================================= */
 
-async function createSyncRun() {
+async function createSyncRun(
+  feedsTotal
+) {
 
   try {
 
@@ -1885,7 +2673,8 @@ async function createSyncRun() {
         .insert({
 
           feeds_total:
-            feeds.length,
+            feedsTotal,
+
 
           status:
             'running'
@@ -2031,12 +2820,21 @@ export async function syncFeeds() {
     Date.now();
 
 
-  /* -------------------------------------------------------
-     NO FEEDS
-  ------------------------------------------------------- */
+  const deadline =
+
+    syncStarted +
+
+    GLOBAL_SYNC_TIMEOUT_MS -
+
+    GLOBAL_TIMEOUT_BUFFER_MS;
+
+
+  /*
+    Tidak ada RSS.
+  */
 
   if (
-    feeds.length ===
+    prioritizedFeeds.length ===
     0
   ) {
 
@@ -2058,24 +2856,6 @@ export async function syncFeeds() {
         0,
 
 
-      rowsSeen:
-        0,
-
-
-      upserted:
-        0,
-
-
-      failed:
-        0,
-
-
-      durationMs:
-
-        Date.now() -
-        syncStarted,
-
-
       at:
         nowIso()
 
@@ -2084,9 +2864,9 @@ export async function syncFeeds() {
   }
 
 
-  /* -------------------------------------------------------
-     ACQUIRE LOCK
-  ------------------------------------------------------- */
+  /*
+    ACQUIRE LOCK
+  */
 
   const lock =
 
@@ -2098,6 +2878,7 @@ export async function syncFeeds() {
 
         p_name:
           'news-sync',
+
 
         p_ttl_seconds:
           SYNC_LOCK_TTL
@@ -2135,7 +2916,7 @@ export async function syncFeeds() {
 
 
       feeds:
-        feeds.length,
+        prioritizedFeeds.length,
 
 
       at:
@@ -2152,41 +2933,219 @@ export async function syncFeeds() {
 
   try {
 
-    /* -----------------------------------------------------
-       CREATE RUN
-    ----------------------------------------------------- */
+    /*
+      CREATE RUN
+    */
 
     runId =
-      await createSyncRun();
+
+      await createSyncRun(
+        prioritizedFeeds.length
+      );
+
+
+    /*
+      FEED HEALTH
+    */
+
+    const healthMap =
+
+      await getFeedHealth(
+        prioritizedFeeds
+      );
+
+
+    /*
+      CIRCUIT BREAKER FILTER
+    */
+
+    const activeFeeds =
+      [];
+
+
+    const skippedFeeds =
+      [];
+
+
+    for (
+
+      const url
+      of prioritizedFeeds
+
+    ) {
+
+      const health =
+
+        healthMap.get(
+          url
+        );
+
+
+      if (
+
+        shouldSkipByCircuitBreaker(
+          health
+        )
+
+      ) {
+
+        skippedFeeds.push({
+
+          url,
+
+          reason:
+            'circuit_breaker',
+
+          priority:
+
+            feedPriority(
+              url
+            )
+
+        });
+
+        continue;
+
+      }
+
+
+      activeFeeds.push(
+        url
+      );
+
+    }
 
 
     console.log(
 
-      `[SYNC] Starting ${feeds.length} RSS feeds with concurrency ${RSS_CONCURRENCY}`
+      `[SYNC] START`
 
     );
 
 
-    /* -----------------------------------------------------
-       PARALLEL SYNC
-    ----------------------------------------------------- */
+    console.log(
 
-    const results =
+      `[SYNC] Total feeds: ${prioritizedFeeds.length}`
 
-      await runWithConcurrency(
+    );
 
-        feeds,
+
+    console.log(
+
+      `[SYNC] Active feeds: ${activeFeeds.length}`
+
+    );
+
+
+    console.log(
+
+      `[SYNC] Circuit skipped: ${skippedFeeds.length}`
+
+    );
+
+
+    console.log(
+
+      `[SYNC] Concurrency: ${RSS_CONCURRENCY}`
+
+    );
+
+
+    /*
+      GLOBAL STATE
+
+      Dipakai untuk deduplikasi
+      seluruh sync.
+    */
+
+    const runState =
+      {
+
+        seenUrls:
+
+          new Set(),
+
+
+        seenFingerprints:
+
+          new Set()
+
+      };
+
+
+    /*
+      STOP CONDITION
+    */
+
+    const shouldStop =
+      () =>
+        Date.now() >=
+        deadline;
+
+
+    /*
+      PARALLEL SYNC
+    */
+
+    const {
+
+      results,
+
+      remaining
+
+    } =
+
+      await runWorkerPool(
+
+        activeFeeds,
+
+
+        url =>
+
+          processFeed(
+
+            url,
+
+            runState
+
+          ),
+
 
         RSS_CONCURRENCY,
 
-        processFeed
+
+        shouldStop
 
       );
 
 
-    /* -----------------------------------------------------
-       CALCULATE RESULT
-    ----------------------------------------------------- */
+    /*
+      STATISTICS
+    */
+
+    const successful =
+
+      results.filter(
+
+        result =>
+          result.ok
+
+      )
+
+        .length;
+
+
+    const failed =
+
+      results.filter(
+
+        result =>
+          result.failed
+
+      )
+
+        .length;
+
 
     const rowsSeen =
 
@@ -2202,6 +3161,7 @@ export async function syncFeeds() {
           Number(
 
             result.rowsSeen ||
+
             0
 
           ),
@@ -2225,6 +3185,7 @@ export async function syncFeeds() {
           Number(
 
             result.upserted ||
+
             0
 
           ),
@@ -2234,28 +3195,14 @@ export async function syncFeeds() {
       );
 
 
-    const failed =
+    const timedOut =
 
-      results.filter(
-
-        result =>
-          result.failed
-
-      )
-
-        .length;
+      shouldStop();
 
 
-    const successful =
+    const feedsSkipped =
 
-      results.filter(
-
-        result =>
-          result.ok
-
-      )
-
-        .length;
+      skippedFeeds.length;
 
 
     const durationMs =
@@ -2264,40 +3211,67 @@ export async function syncFeeds() {
       syncStarted;
 
 
-    const status =
+    /*
+      STATUS
+    */
 
-      failed === 0
-
-        ? 'success'
-
-        : (
-
-            successful > 0
-
-              ? 'partial'
-
-              : 'failed'
-
-          );
+    let status =
+      'success';
 
 
-    /* -----------------------------------------------------
-       OPTIONAL INTELLIGENCE
-    ----------------------------------------------------- */
+    if (
+
+      failed > 0 ||
+
+      timedOut ||
+
+      remaining > 0
+
+    ) {
+
+      status =
+
+        successful > 0
+
+          ? 'partial'
+
+          : 'failed';
+
+    }
+
+
+    /*
+      POST PROCESSING
+
+      Tidak boleh membuat sync utama gagal.
+    */
 
     await safeRpc(
       'rebuild_article_intelligence'
     );
 
 
-    await safeRpc(
-      'rebuild_live_events'
-    );
+    /*
+      Hanya jalankan jika waktu
+      masih cukup.
+    */
+
+    if (
+
+      !shouldStop()
+
+    ) {
+
+      await safeRpc(
+        'rebuild_live_events'
+      );
+
+    }
 
 
-    /* -----------------------------------------------------
-       FINISH RUN
-    ----------------------------------------------------- */
+    /*
+      FINISH RUN
+    */
 
     await finishSyncRun(
 
@@ -2328,80 +3302,177 @@ export async function syncFeeds() {
     );
 
 
+    /*
+      RESULT
+    */
+
+    const result =
+      {
+
+        ok:
+          true,
+
+
+        status,
+
+
+        feeds:
+
+          prioritizedFeeds.length,
+
+
+        feedsActive:
+
+          activeFeeds.length,
+
+
+        successful,
+
+
+        failed,
+
+
+        circuitSkipped:
+
+          feedsSkipped,
+
+
+        deadlineRemaining:
+
+          remaining,
+
+
+        timedOut,
+
+
+        rowsSeen,
+
+
+        upserted,
+
+
+        concurrency:
+
+          RSS_CONCURRENCY,
+
+
+        maxItemsPerFeed:
+
+          MAX_ITEMS_PER_FEED,
+
+
+        durationMs,
+
+
+        at:
+          nowIso(),
+
+
+        priority:
+
+          {
+
+            purworejo:
+
+              prioritizedFeeds.filter(
+
+                url =>
+
+                  feedPriority(
+                    url
+                  ) === 1
+
+              ).length,
+
+
+            jawaTengah:
+
+              prioritizedFeeds.filter(
+
+                url =>
+
+                  feedPriority(
+                    url
+                  ) === 2
+
+              ).length,
+
+
+            nasional:
+
+              prioritizedFeeds.filter(
+
+                url =>
+
+                  feedPriority(
+                    url
+                  ) === 3
+
+              ).length,
+
+
+            internasional:
+
+              prioritizedFeeds.filter(
+
+                url =>
+
+                  feedPriority(
+                    url
+                  ) === 4
+
+              ).length
+
+          },
+
+
+        errors:
+
+          results
+
+            .filter(
+
+              result =>
+                result.failed
+
+            )
+
+            .slice(
+              0,
+              20
+            )
+
+            .map(
+
+              result =>
+                ({
+
+                  url:
+                    result.url,
+
+
+                  error:
+                    result.error
+
+                })
+
+            )
+
+      };
+
+
     console.log(
 
-      `[SYNC] Finished: ${successful}/${feeds.length} feeds, ${upserted} articles, ${failed} failed, ${durationMs}ms`
+      '[SYNC] FINISHED',
+
+      JSON.stringify(
+        result
+      )
 
     );
 
 
-    return {
-
-      ok:
-        true,
-
-
-      status,
-
-
-      feeds:
-        feeds.length,
-
-
-      successful,
-
-
-      failed,
-
-
-      rowsSeen,
-
-
-      upserted,
-
-
-      concurrency:
-        RSS_CONCURRENCY,
-
-
-      maxItemsPerFeed:
-        MAX_ITEMS_PER_FEED,
-
-
-      durationMs,
-
-
-      at:
-        nowIso(),
-
-
-      errors:
-
-        results
-
-          .filter(
-            result =>
-              result.failed
-          )
-
-          .slice(
-            0,
-            20
-          )
-
-          .map(
-            result => ({
-
-              url:
-                result.url,
-
-              error:
-                result.error
-
-            })
-          )
-
-    };
+    return result;
 
   }
 
@@ -2413,6 +3484,16 @@ export async function syncFeeds() {
 
       Date.now() -
       syncStarted;
+
+
+    console.error(
+
+      '[SYNC FATAL]',
+
+      error.message ||
+      error
+
+    );
 
 
     await finishSyncRun(
@@ -2448,6 +3529,17 @@ export async function syncFeeds() {
 
   finally {
 
+    /*
+      RELEASE LOCK
+
+      Tidak menggunakan:
+
+      supabase.rpc(...).catch()
+
+      karena itu sebelumnya
+      menyebabkan error.
+    */
+
     await safeRpc(
 
       'release_sync_lock',
@@ -2467,7 +3559,7 @@ export async function syncFeeds() {
 
 
 /* =========================================================
-   DIRECT RUN
+   DIRECT EXECUTION
 
    Bisa dijalankan:
 
@@ -2486,6 +3578,7 @@ if (
   try {
 
     const result =
+
       await syncFeeds();
 
 
@@ -2513,6 +3606,7 @@ if (
 
       '[SYNC FATAL]',
 
+      error.message ||
       error
 
     );
