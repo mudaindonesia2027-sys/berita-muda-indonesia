@@ -2333,71 +2333,6 @@ app.get(
           .from(
             'news_events'
           )
-          .select(`
-            id,
-            event_key,
-            title,
-            category,
-            status,
-            article_count,
-            source_count,
-            updated_at,
-            created_at
-          `)
-          .order(
-            'updated_at',
-            {
-              ascending:
-                false
-            }
-          )
-          .limit(limit);
-
-      if (error) {
-        throw error;
-      }
-
-      response.json(
-        data || []
-      );
-
-    } catch (error) {
-      response
-        .status(500)
-        .json({
-          error:
-            error.message
-        });
-    }
-  }
-);
-/* =========================================================
-   LIVE EVENTS
-========================================================= */
-
-app.get(
-  '/api/live/events',
-
-  async (
-    request,
-    response
-  ) => {
-    try {
-      const limit =
-        cleanLimit(
-          request.query.limit,
-          30,
-          10
-        );
-
-      const {
-        data,
-        error
-      } =
-        await supabase
-          .from(
-            'news_events'
-          )
           .select(
             `
             id,
@@ -2754,30 +2689,6 @@ const counter =
 /* =========================================================
    ARTICLE INTERACTIONS
 ========================================================= */
-
-app.post(
-  '/api/articles/:id/view',
-
-  interactionLimiter,
-
-  counter(
-    'increment_article_views',
-    'view',
-    'article'
-  )
-);
-
-app.post(
-  '/api/articles/:id/like',
-
-  interactionLimiter,
-
-  counter(
-    'increment_article_likes',
-    'like',
-    'article'
-  )
-);
 
 app.post(
   '/api/articles/:id/share',
@@ -3545,148 +3456,6 @@ app.get(
     }
   }
 );
-/* =========================================================
-   ADMIN STATS - LANJUTAN
-========================================================= */
-
-      const firstError =
-        articlesResult.error ||
-        draftsResult.error ||
-        videosResult.error ||
-        eventsResult.error;
-
-      if (firstError) {
-        throw firstError;
-      }
-
-      const articles =
-        articlesResult.data ||
-        [];
-
-      const videos =
-        videosResult.data ||
-        [];
-
-      const all =
-        [
-          ...articles,
-          ...videos
-        ];
-
-      const topContent =
-        [...all]
-          .sort(
-            (a, b) => {
-              const scoreA =
-                Number(
-                  a.views ||
-                  0
-                ) +
-                Number(
-                  a.shares ||
-                  0
-                ) * 3 +
-                Number(
-                  a.likes ||
-                  0
-                ) * 2;
-
-              const scoreB =
-                Number(
-                  b.views ||
-                  0
-                ) +
-                Number(
-                  b.shares ||
-                  0
-                ) * 3 +
-                Number(
-                  b.likes ||
-                  0
-                ) * 2;
-
-              return (
-                scoreB -
-                scoreA
-              );
-            }
-          )
-          .slice(
-            0,
-            10
-          );
-
-      response.json({
-        publishedArticles:
-          articles.length,
-
-        draftArticles:
-          draftsResult.count ||
-          0,
-
-        videos:
-          videos.length,
-
-        views:
-          all.reduce(
-            (
-              sum,
-              item
-            ) =>
-              sum +
-              Number(
-                item.views ||
-                0
-              ),
-            0
-          ),
-
-        likes:
-          all.reduce(
-            (
-              sum,
-              item
-            ) =>
-              sum +
-              Number(
-                item.likes ||
-                0
-              ),
-            0
-          ),
-
-        shares:
-          all.reduce(
-            (
-              sum,
-              item
-            ) =>
-              sum +
-              Number(
-                item.shares ||
-                0
-              ),
-            0
-          ),
-
-        events:
-          eventsResult.count ||
-          0,
-
-        topContent
-      });
-
-    } catch (error) {
-      response
-        .status(500)
-        .json({
-          error:
-            error.message
-        });
-    }
-  }
-);
-
 /* =========================================================
    ARTICLE WRITE HELPER
 ========================================================= */
@@ -5927,10 +5696,6 @@ app.get(
   healthHandler
 );
 
-app.get(
-  '/api/health',
-  healthHandler
-);
 
 /* =========================================================
    HOMEPAGE
