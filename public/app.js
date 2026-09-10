@@ -3275,10 +3275,10 @@
 
       async () => {
 
-        await Promise.all([
-          loadArticles(),
-          loadVideos()
-        );
+       await Promise.all([
+    loadArticles(),
+    loadVideos(),
+]);
 
         toast(
           'Pembaruan selesai',
