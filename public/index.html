@@ -40,9 +40,9 @@
 
         <div class="header-controls">
           <button class="header-icon" id="videoShortcut" title="Video">▻</button>
-          <button class="header-icon" id="notificationBtn" title="Notifikasi">♧<b id="notificationBadge">0</b></button>
-          <button class="account-btn" id="loginBtn">Masuk</button>
-          <button class="join-btn" id="joinBtn">Daftar</button>
+          <button class="header-icon" id="notificationBtn" title="Breaking & notifikasi">♧<b id="notificationBadge">0</b></button>
+          <button class="account-btn" id="loginBtn">Panel Redaksi</button>
+          <button class="join-btn" id="joinBtn">Gabung</button>
           <button class="header-icon mobile-only" id="menuToggle" aria-label="Menu">☰</button>
         </div>
       </div>
@@ -99,6 +99,8 @@
         </aside>
       </section>
 
+      <section class="classification-head"><div><span class="eyebrow">KLASIFIKASI KANAL</span><h2>Jelajahi berita berdasarkan kategori</h2><p>Setiap kanal memiliki filter yang sama agar navigasi dan klasifikasi tetap konsisten.</p></div></section>
+
       <section class="category-tiles" id="categoryTiles">
         <button data-category="NASIONAL"><span>◉</span><b>Nasional</b><small>Berita dalam negeri</small></button>
         <button data-category="INTERNASIONAL"><span>◎</span><b>Dunia</b><small>Isu internasional</small></button>
@@ -108,12 +110,39 @@
         <button data-category="TEKNOLOGI"><span>⌘</span><b>Teknologi</b><small>Digital & inovasi</small></button>
         <button data-category="OLAHRAGA"><span>◌</span><b>Sport</b><small>Olahraga</small></button>
         <button data-category="HIBURAN"><span>✦</span><b>Hiburan</b><small>Selebritas & budaya</small></button>
+        <button data-category="LIFESTYLE"><span>◈</span><b>Lifestyle</b><small>Gaya hidup & inspirasi</small></button>
+      </section>
+
+      <section class="feature-status" id="featureStatus" aria-label="Status fitur newsroom">
+        <div class="feature-status-head">
+          <div><span class="eyebrow">FITUR NEWSROOM</span><h2>Semua modul utama dalam satu panel</h2><p>Setiap fitur diberi status jelas agar mudah dipantau.</p></div>
+          <span class="feature-overall" id="featureOverall">Memeriksa…</span>
+        </div>
+        <div class="feature-status-grid">
+          <article class="feature-status-card" data-feature="feed"><div><b>Intelligent Feed</b><small>Berita terbit + pencarian</small></div><span id="featureFeed">CEK</span></article>
+          <article class="feature-status-card" data-feature="ranking"><div><b>Smart Ranking</b><small>Skor intelligence & prioritas</small></div><span id="featureRanking">CEK</span></article>
+          <article class="feature-status-card" data-feature="trend"><div><b>Trending</b><small>Konten paling diperbincangkan</small></div><span id="featureTrend">CEK</span></article>
+          <article class="feature-status-card" data-feature="live"><div><b>Live Monitor</b><small>Event & breaking news</small></div><span id="featureLive">CEK</span></article>
+          <article class="feature-status-card" data-feature="video"><div><b>Video</b><small>Playback + statistik tayang</small></div><span id="featureVideo">CEK</span></article>
+          <article class="feature-status-card" data-feature="engagement"><div><b>Engagement</b><small>View, like, share, newsletter</small></div><span id="featureEngagement">CEK</span></article>
+        </div>
       </section>
 
       <section class="content-layout">
         <div class="content-main">
           <div class="section-title-row"><div><span class="eyebrow">INTELLIGENT FEED</span><h2 id="sectionTitle">Berita Terbaru</h2></div><div class="feed-tools"><button id="clearFilter" class="subtle-btn hidden">Reset</button><span id="feedCount">0 berita</span></div></div>
-          <div class="filter-pills" id="filterPills"><button class="pill active" data-category="">Semua</button><button class="pill" data-category="NASIONAL">Nasional</button><button class="pill" data-category="TEKNOLOGI">Teknologi</button><button class="pill" data-category="EKONOMI">Ekonomi</button><button class="pill" data-category="POLITIK">Politik</button></div>
+          <div class="filter-pills" id="filterPills">
+            <button class="pill active" data-category="">Semua</button>
+            <button class="pill" data-category="NASIONAL">Nasional</button>
+            <button class="pill" data-category="INTERNASIONAL">Dunia</button>
+            <button class="pill" data-category="EKONOMI">Ekonomi</button>
+            <button class="pill" data-category="POLITIK">Politik</button>
+            <button class="pill" data-category="HUKUM">Hukum</button>
+            <button class="pill" data-category="TEKNOLOGI">Teknologi</button>
+            <button class="pill" data-category="OLAHRAGA">Sport</button>
+            <button class="pill" data-category="HIBURAN">Hiburan</button>
+            <button class="pill" data-category="LIFESTYLE">Lifestyle</button>
+          </div>
           <div id="loadingState" class="loading-grid"><div></div><div></div><div></div></div>
           <div id="articlesGrid" class="article-grid"></div>
           <div id="emptyState" class="empty-panel hidden"><div class="empty-orb">⌁</div><h3 id="emptyTitle">Newsroom sedang menunggu data</h3><p id="emptyText">API aktif, tetapi belum ada artikel yang tersedia. Periksa koneksi Supabase dan sinkronisasi sumber berita.</p><div class="empty-actions"><button class="primary-cta small" id="emptyRefresh">Coba Lagi</button><a href="/api/system/config" target="_blank" rel="noopener">Status sistem ↗</a></div></div>
@@ -124,16 +153,19 @@
             <div class="card-head"><div><span class="eyebrow">VIDEO TERBARU</span><h3>Video Populer</h3></div><button id="showAllVideos">Lihat Semua →</button></div>
             <div id="videoGrid" class="video-grid"><div class="video-empty">Memuat video…</div></div>
           </section>
-          <section class="ad-panel">
-            <span class="ad-label">IKLAN PREMIUM</span><div class="ad-orb">↗</div><h3>Wujudkan Brand Anda Bersama Kami</h3><p>Promosi digital yang dapat diukur, fleksibel, dan terhubung dengan audiens.</p><button id="advertiseBtn">Pasang Iklan Sekarang <span>→</span></button>
+          <section class="ad-panel" id="adPanel">
+            <div id="adContent">
+              <span class="ad-label">IKLAN PREMIUM</span><div class="ad-orb">↗</div><h3>Wujudkan Brand Anda Bersama Kami</h3><p>Promosi digital yang dapat diukur, fleksibel, dan terhubung dengan audiens.</p>
+            </div>
+            <button id="advertiseBtn">Pasang Iklan Sekarang <span>→</span></button>
           </section>
           <section class="live-update-panel"><div class="card-head"><div><span class="status-dot"></span><b>LIVE UPDATE</b></div><button id="refreshLive">↻</button></div><div id="liveUpdates" class="live-updates"></div></section>
         </aside>
       </section>
 
       <section class="intelligence-banner">
-        <div><span class="eyebrow">BERITA MUDA INTELLIGENCE</span><h2>Lebih dari sekadar berita.</h2><p>Fondasi untuk rekomendasi cerdas, pembaruan otomatis, video, analitik, dan monetisasi media modern.</p></div>
-        <div class="intel-features"><span>◉ AI Recommendation</span><span>↻ Live Update</span><span>▻ Multi Platform</span><span>◌ Video & Live</span></div>
+        <div><span class="eyebrow">BERITA MUDA INTELLIGENCE</span><h2>Lebih dari sekadar berita.</h2><p>Ranking cerdas, live monitoring, video, engagement, newsletter, dan monetisasi terhubung ke API newsroom.</p></div>
+        <div class="intel-features"><span>◉ Smart Ranking</span><span>↻ Live Monitor</span><span>▻ Video</span><span>◌ Engagement</span></div>
         <button id="exploreBtn">Jelajahi Sekarang →</button>
       </section>
     </main>
