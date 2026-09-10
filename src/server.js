@@ -624,7 +624,6 @@ location.replace(
 
 </html>`;
 };
-
 /* =========================================================
    DETAIL SEO ROUTES
 ========================================================= */
@@ -761,6 +760,15 @@ for (
         {
           root:
             publicDir
+        },
+        error => {
+          if (error) {
+            response
+              .status(404)
+              .send(
+                'Halaman tidak ditemukan'
+              );
+          }
         }
       );
     }
@@ -768,89 +776,68 @@ for (
 }
 
 /* =========================================================
-   ANALYTICS API
+   HEALTH CHECK
 ========================================================= */
 
-app.post(
-  '/api/analytics/event',
+app.get(
+  '/api/health',
 
-  async (
+  (
     request,
     response
   ) => {
-    const allowedEvents = [
-      'pageview',
-      'view',
-      'like',
-      'share',
-      'video_play',
-      'ad_impression',
-      'ad_click',
-      'article_read',
-      'scroll_25',
-      'scroll_50',
-      'scroll_75',
-      'scroll_100',
-      'video_25',
-      'video_50',
-      'video_75',
-      'video_complete',
-      'affiliate_click'
-    ];
+    response.json({
+      ok:
+        true,
 
-    const body =
-      request.body || {};
+      service:
+        'Berita Muda Indonesia API',
 
-    if (
-      !allowedEvents.includes(
-        body.event_type
-      )
-    ) {
-      return response
-        .status(400)
-        .json({
-          error:
-            'event_type tidak valid'
-        });
-    }
+      timestamp:
+        new Date()
+          .toISOString(),
 
-    await trackEvent({
-      event_type:
-        body.event_type,
-
-      content_type:
-        body.content_type,
-
-      content_id:
-        body.content_id,
-
-      path:
-        cleanText(
-          body.path,
-          300
-        ),
-
-      referrer:
-        cleanText(
-          body.referrer,
-          500
-        ),
-
-      session_id:
-        cleanText(
-          body.session_id,
-          100
+      supabase:
+        Boolean(
+          isSupabaseConfigured
         )
     });
-
-    response
-      .status(204)
-      .end();
   }
 );
 
 /* =========================================================
-   PUBLIC ARTICLES
+   API STATUS
+========================================================= */
+
+app.get(
+  '/api/status',
+
+  (
+    request,
+    response
+  ) => {
+    response.json({
+      ok:
+        true,
+
+      configured:
+        Boolean(
+          isSupabaseConfigured
+        ),
+
+      message:
+        isSupabaseConfigured
+          ? 'Supabase terhubung'
+          : (
+              supabaseConfigMessage ||
+              'Supabase belum dikonfigurasi'
+            )
+    });
+  }
+);
+
+/* =========================================================
+   ARTICLES
 ========================================================= */
 
 app.get(
@@ -860,38 +847,119 @@ app.get(
     request,
     response
   ) => {
-    if (!isSupabaseConfigured) {
-      return response
-        .set('X-BMI-Data-Mode', 'configuration-required')
-        .json([]);
-    }
-
     try {
-      const pageLimit =
+      if (!isSupabaseConfigured) {
+        return response
+          .status(503)
+          .json({
+            error:
+              supabaseConfigMessage ||
+              'Supabase belum dikonfigurasi'
+          });
+      }
+
+      const limit =
         cleanLimit(
           request.query.limit,
           100,
-          24
+          20
         );
 
-      const pageOffset =
+      const offset =
         Math.max(
           Number(
-            request.query.offset
-          ) || 0,
+            request.query.offset ||
+            0
+          ),
           0
         );
 
-      let query =
+      const category =
+        cleanText(
+          request.query.category,
+          80
+        );
+
+      const query =
+        safeQuery(
+          request.query.q
+        );
+
+      let builder =
         supabase
           .from('articles')
-          .select('*')
+          .select(
+            `
+            id,
+            title,
+            summary,
+            content,
+            content_html,
+            url,
+            image_url,
+            source,
+            source_url,
+            author_name,
+            author_url,
+            category,
+            tags,
+            published_at,
+            created_at,
+            updated_at,
+            reading_minutes,
+            views,
+            likes,
+            shares,
+            featured,
+            breaking,
+            status,
+            content_available,
+            editorial_status,
+            intelligence_score,
+            source_quality_score,
+            freshness_score,
+            engagement_score,
+            canonical_url
+            `
+          )
           .eq(
             'status',
             'published'
+          );
+
+      if (category) {
+        builder =
+          builder.eq(
+            'category',
+            category
+          );
+      }
+
+      if (query) {
+        builder =
+          builder.or(
+            [
+              `title.ilike.%${query}%`,
+              `summary.ilike.%${query}%`,
+              `content.ilike.%${query}%`
+            ].join(',')
+          );
+      }
+
+      const {
+        data,
+        error
+      } =
+        await builder
+          .order(
+            'breaking',
+            {
+              ascending:
+                false
+            }
           )
           .order(
-            'intelligence_score',
+            'featured',
             {
               ascending:
                 false
@@ -905,62 +973,41 @@ app.get(
             }
           )
           .range(
-            pageOffset,
-            pageOffset +
-              pageLimit -
+            offset,
+            offset +
+              limit -
               1
           );
-
-      if (
-        request.query.category
-      ) {
-        query =
-          query.eq(
-            'category',
-
-            cleanText(
-              request.query.category,
-              40
-            ).toUpperCase()
-          );
-      }
-
-      const term =
-        safeQuery(
-          request.query.q
-        );
-
-      if (term) {
-        query =
-          query.or(
-            `title.ilike.%${term}%,summary.ilike.%${term}%,content_html.ilike.%${term}%,source.ilike.%${term}%`
-          );
-      }
-
-      const {
-        data,
-        error
-      } =
-        await query;
 
       if (error) {
         throw error;
       }
 
       response.json(
-        data || []
+        data ||
+        []
       );
 
     } catch (error) {
+      console.error(
+        '[API] articles:',
+        error
+      );
+
       response
         .status(500)
         .json({
           error:
-            error.message
+            error.message ||
+            'Gagal mengambil berita'
         });
     }
   }
 );
+
+/* =========================================================
+   SINGLE ARTICLE
+========================================================= */
 
 app.get(
   '/api/articles/:id',
@@ -969,43 +1016,271 @@ app.get(
     request,
     response
   ) => {
-    if (!isSupabaseConfigured) {
-      return response.status(503).json({
-        error: 'Supabase belum dikonfigurasi',
-        code: 'SUPABASE_CONFIGURATION_REQUIRED'
-      });
-    }
+    try {
+      if (!isSupabaseConfigured) {
+        return response
+          .status(503)
+          .json({
+            error:
+              supabaseConfigMessage ||
+              'Supabase belum dikonfigurasi'
+          });
+      }
 
-    const {
-      data,
-      error
-    } =
-      await supabase
-        .from('articles')
-        .select('*')
-        .eq(
-          'id',
-          request.params.id
-        )
-        .eq(
-          'status',
-          'published'
-        )
-        .single();
+      const {
+        data,
+        error
+      } =
+        await supabase
+          .from('articles')
+          .select('*')
+          .eq(
+            'id',
+            request.params.id
+          )
+          .eq(
+            'status',
+            'published'
+          )
+          .maybeSingle();
 
-    if (error || !data) {
-      return response
-        .status(404)
+      if (error) {
+        throw error;
+      }
+
+      if (!data) {
+        return response
+          .status(404)
+          .json({
+            error:
+              'Berita tidak ditemukan'
+          });
+      }
+
+      response.json(
+        data
+      );
+
+    } catch (error) {
+      console.error(
+        '[API] article detail:',
+        error
+      );
+
+      response
+        .status(500)
         .json({
           error:
-            'Artikel tidak ditemukan'
+            error.message ||
+            'Gagal mengambil detail berita'
         });
     }
-
-    response.json(data);
   }
 );
 
+/* =========================================================
+   ARTICLE VIEW
+========================================================= */
+
+app.post(
+  '/api/articles/:id/view',
+
+  interactionLimiter,
+
+  async (
+    request,
+    response
+  ) => {
+    try {
+      const id =
+        request.params.id;
+
+      const {
+        data:
+          current,
+        error:
+          currentError
+      } =
+        await adminClient
+          .from('articles')
+          .select(
+            'views'
+          )
+          .eq(
+            'id',
+            id
+          )
+          .maybeSingle();
+
+      if (currentError) {
+        throw currentError;
+      }
+
+      if (!current) {
+        return response
+          .status(404)
+          .json({
+            error:
+              'Berita tidak ditemukan'
+          });
+      }
+
+      const {
+        error
+      } =
+        await adminClient
+          .from('articles')
+          .update({
+            views:
+              Number(
+                current.views ||
+                0
+              ) +
+              1
+          })
+          .eq(
+            'id',
+            id
+          );
+
+      if (error) {
+        throw error;
+      }
+
+      trackEvent({
+        event_type:
+          'view',
+
+        content_type:
+          'article',
+
+        content_id:
+          id,
+
+        path:
+          `/berita/${id}`,
+
+        referrer:
+          request.headers.referer ||
+          null
+      });
+
+      response.json({
+        ok:
+          true
+      });
+
+    } catch (error) {
+      response
+        .status(500)
+        .json({
+          error:
+            error.message ||
+            'Gagal mencatat view'
+        });
+    }
+  }
+);
+
+/* =========================================================
+   ARTICLE LIKE
+========================================================= */
+
+app.post(
+  '/api/articles/:id/like',
+
+  interactionLimiter,
+
+  async (
+    request,
+    response
+  ) => {
+    try {
+      const id =
+        request.params.id;
+
+      const {
+        data:
+          current,
+        error:
+          currentError
+      } =
+        await adminClient
+          .from('articles')
+          .select(
+            'likes'
+          )
+          .eq(
+            'id',
+            id
+          )
+          .maybeSingle();
+
+      if (currentError) {
+        throw currentError;
+      }
+
+      if (!current) {
+        return response
+          .status(404)
+          .json({
+            error:
+              'Berita tidak ditemukan'
+          });
+      }
+
+      const {
+        error
+      } =
+        await adminClient
+          .from('articles')
+          .update({
+            likes:
+              Number(
+                current.likes ||
+                0
+              ) +
+              1
+          })
+          .eq(
+            'id',
+            id
+          );
+
+      if (error) {
+        throw error;
+      }
+
+      trackEvent({
+        event_type:
+          'like',
+
+        content_type:
+          'article',
+
+        content_id:
+          id,
+
+        path:
+          `/berita/${id}`
+      });
+
+      response.json({
+        ok:
+          true
+      });
+
+    } catch (error) {
+      response
+        .status(500)
+        .json({
+          error:
+            error.message ||
+            'Gagal menyimpan like'
+        });
+    }
+  }
+);
 /* =========================================================
    COMMENTS
 ========================================================= */
@@ -1116,8 +1391,7 @@ app.get(
       } =
         await supabase
           .from('comments')
-          .select(
-            `
+          .select(`
             id,
             content_type,
             content_id,
@@ -1126,8 +1400,7 @@ app.get(
             status,
             created_at,
             user_id
-            `
-          )
+          `)
           .eq(
             'content_type',
             contentType
@@ -1302,15 +1575,37 @@ app.post(
         throw error;
       }
 
-      await adminClient
-        .rpc(
-          'refresh_comment_reputation',
-          {
-            p_user_id:
-              user.id
-          }
-        )
-        .catch(() => {});
+      /*
+       * FIX:
+       * Jangan gunakan adminClient.rpc(...).catch(...)
+       */
+      try {
+        const {
+          error: reputationError
+        } =
+          await adminClient.rpc(
+            'refresh_comment_reputation',
+            {
+              p_user_id:
+                user.id
+            }
+          );
+
+        if (reputationError) {
+          console.error(
+            '[COMMENTS] refresh_comment_reputation:',
+            reputationError.message ||
+              reputationError
+          );
+        }
+
+      } catch (rpcError) {
+        console.error(
+          '[COMMENTS] refresh_comment_reputation failed:',
+          rpcError?.message ||
+            rpcError
+        );
+      }
 
       response
         .status(201)
@@ -1545,15 +1840,37 @@ app.patch(
         throw error;
       }
 
-      await adminClient
-        .rpc(
-          'refresh_comment_reputation',
-          {
-            p_user_id:
-              data.user_id
-          }
-        )
-        .catch(() => {});
+      /*
+       * FIX:
+       * Jangan gunakan .catch() langsung pada RPC builder.
+       */
+      try {
+        const {
+          error: reputationError
+        } =
+          await adminClient.rpc(
+            'refresh_comment_reputation',
+            {
+              p_user_id:
+                data.user_id
+            }
+          );
+
+        if (reputationError) {
+          console.error(
+            '[ADMIN COMMENTS] refresh_comment_reputation:',
+            reputationError.message ||
+              reputationError
+          );
+        }
+
+      } catch (rpcError) {
+        console.error(
+          '[ADMIN COMMENTS] refresh_comment_reputation failed:',
+          rpcError?.message ||
+            rpcError
+        );
+      }
 
       await adminClient
         .from('audit_logs')
@@ -1677,13 +1994,11 @@ app.get(
             .from(
               'audit_logs'
             )
-            .select(
-              `
+            .select(`
               action,
               resource_type,
               created_at
-              `
-            )
+            `)
             .order(
               'created_at',
               {
@@ -1746,14 +2061,12 @@ app.get(
           .from(
             'trending_content'
           )
-          .select(
-            `
+          .select(`
             content_type,
             content_id,
             score,
             rank
-            `
-          )
+          `)
           .order(
             'rank',
             {
@@ -1768,16 +2081,53 @@ app.get(
       }
 
       if (!data?.length) {
-        await adminClient
-          .rpc(
-            'rebuild_article_intelligence'
-          )
-          .catch(() => {});
+        /*
+         * FIX:
+         * RPC harus di-await terlebih dahulu.
+         */
+        try {
+          const {
+            error: intelligenceError
+          } =
+            await adminClient.rpc(
+              'rebuild_article_intelligence'
+            );
 
-        await adminClient
-          .rpc(
-            'rebuild_trending'
+          if (intelligenceError) {
+            console.error(
+              '[TRENDING] rebuild_article_intelligence:',
+              intelligenceError.message ||
+                intelligenceError
+            );
+          }
+
+        } catch (rpcError) {
+          console.error(
+            '[TRENDING] rebuild_article_intelligence failed:',
+            rpcError?.message ||
+              rpcError
           );
+        }
+
+        try {
+          const {
+            error: rebuildError
+          } =
+            await adminClient.rpc(
+              'rebuild_trending'
+            );
+
+          if (rebuildError) {
+            throw rebuildError;
+          }
+
+        } catch (rpcError) {
+          console.error(
+            '[TRENDING] rebuild_trending failed:',
+            rpcError?.message ||
+              rpcError
+          );
+        }
 
         ({
           data,
@@ -1787,14 +2137,12 @@ app.get(
             .from(
               'trending_content'
             )
-            .select(
-              `
+            .select(`
               content_type,
               content_id,
               score,
               rank
-              `
-            )
+            `)
             .order(
               'rank',
               {
@@ -1841,8 +2189,7 @@ app.get(
           articleIds.length
             ? adminClient
                 .from('articles')
-                .select(
-                  `
+                .select(`
                   id,
                   title,
                   summary,
@@ -1854,8 +2201,7 @@ app.get(
                   published_at,
                   author_name,
                   content_available
-                  `
-                )
+                `)
                 .in(
                   'id',
                   articleIds
@@ -1873,8 +2219,7 @@ app.get(
           videoIds.length
             ? adminClient
                 .from('videos')
-                .select(
-                  `
+                .select(`
                   id,
                   title,
                   description,
@@ -1885,8 +2230,7 @@ app.get(
                   shares,
                   created_at,
                   author_name
-                  `
-                )
+                `)
                 .in(
                   'id',
                   videoIds
@@ -1962,6 +2306,71 @@ app.get(
   }
 );
 
+/* =========================================================
+   LIVE EVENTS
+========================================================= */
+
+app.get(
+  '/api/live/events',
+
+  async (
+    request,
+    response
+  ) => {
+    try {
+      const limit =
+        cleanLimit(
+          request.query.limit,
+          30,
+          10
+        );
+
+      const {
+        data,
+        error
+      } =
+        await supabase
+          .from(
+            'news_events'
+          )
+          .select(`
+            id,
+            event_key,
+            title,
+            category,
+            status,
+            article_count,
+            source_count,
+            updated_at,
+            created_at
+          `)
+          .order(
+            'updated_at',
+            {
+              ascending:
+                false
+            }
+          )
+          .limit(limit);
+
+      if (error) {
+        throw error;
+      }
+
+      response.json(
+        data || []
+      );
+
+    } catch (error) {
+      response
+        .status(500)
+        .json({
+          error:
+            error.message
+        });
+    }
+  }
+);
 /* =========================================================
    LIVE EVENTS
 ========================================================= */
@@ -2395,7 +2804,10 @@ app.get(
   ) => {
     if (!isSupabaseConfigured) {
       return response
-        .set('X-BMI-Data-Mode', 'configuration-required')
+        .set(
+          'X-BMI-Data-Mode',
+          'configuration-required'
+        )
         .json([]);
     }
 
@@ -3000,15 +3412,7 @@ app.get(
             .eq(
               'status',
               'published'
-            )
-            .order(
-              'views',
-              {
-                ascending:
-                  false
-              }
-            )
-            .limit(2000),
+            ),
 
           adminClient
             .from('articles')
@@ -3021,42 +3425,13 @@ app.get(
                   true
               }
             )
-            .eq(
+            .neq(
               'status',
-              'draft'
+              'published'
             ),
 
           adminClient
             .from('videos')
-            .select(
-              `
-              id,
-              title,
-              category,
-              views,
-              likes,
-              shares,
-              created_at,
-              status
-              `
-            )
-            .eq(
-              'status',
-              'published'
-            )
-            .order(
-              'views',
-              {
-                ascending:
-                  false
-              }
-            )
-            .limit(1000),
-
-          adminClient
-            .from(
-              'analytics_events'
-            )
             .select(
               'id',
               {
@@ -3066,7 +3441,113 @@ app.get(
                   true
               }
             )
+            .eq(
+              'status',
+              'published'
+            ),
+
+          adminClient
+            .from('news_events')
+            .select(
+              'id',
+              {
+                count:
+                  'exact',
+                head:
+                  true
+              }
+            )
+            .in(
+              'status',
+              [
+                'active',
+                'watch'
+              ]
+            )
         ]);
+
+      const articles =
+        articlesResult.data ||
+        [];
+
+      const totalViews =
+        articles.reduce(
+          (
+            total,
+            article
+          ) =>
+            total +
+            Number(
+              article.views ||
+              0
+            ),
+          0
+        );
+
+      const totalLikes =
+        articles.reduce(
+          (
+            total,
+            article
+          ) =>
+            total +
+            Number(
+              article.likes ||
+              0
+            ),
+          0
+        );
+
+      const totalShares =
+        articles.reduce(
+          (
+            total,
+            article
+          ) =>
+            total +
+            Number(
+              article.shares ||
+              0
+            ),
+          0
+        );
+
+      response.json({
+        articles:
+          articles.length,
+
+        drafts:
+          draftsResult.count ||
+          0,
+
+        videos:
+          videosResult.count ||
+          0,
+
+        events:
+          eventsResult.count ||
+          0,
+
+        totalViews,
+
+        totalLikes,
+
+        totalShares
+      });
+
+    } catch (error) {
+      response
+        .status(500)
+        .json({
+          error:
+            error.message
+        });
+    }
+  }
+);
+/* =========================================================
+   ADMIN STATS - LANJUTAN
+========================================================= */
 
       const firstError =
         articlesResult.error ||
@@ -4006,7 +4487,6 @@ app.delete(
       .end();
   }
 );
-
 /* =========================================================
    AFFILIATE OFFERS
 ========================================================= */
@@ -4028,8 +4508,7 @@ app.get(
           .from(
             'affiliate_offers'
           )
-          .select(
-            `
+          .select(`
             id,
             partner_name,
             title,
@@ -4040,8 +4519,7 @@ app.get(
             content_type,
             content_id,
             commission_model
-            `
-          )
+          `)
           .eq(
             'active',
             true
@@ -4139,15 +4617,13 @@ app.get(
           .from(
             'affiliate_offers'
           )
-          .select(
-            `
+          .select(`
             id,
             target_url,
             active,
             starts_at,
             ends_at
-            `
-          )
+          `)
           .eq(
             'id',
             request.params.id
@@ -4416,16 +4892,14 @@ app.get(
             .from(
               'revenue_entries'
             )
-            .select(
-              `
+            .select(`
               source,
               amount,
               currency,
               occurred_at,
               content_type,
               content_id
-              `
-            )
+            `)
             .gte(
               'occurred_at',
               since
@@ -4443,16 +4917,14 @@ app.get(
             .from(
               'affiliate_offers'
             )
-            .select(
-              `
+            .select(`
               id,
               title,
               partner_name,
               clicks,
               conversions,
               estimated_commission
-              `
-            )
+            `)
             .order(
               'clicks',
               {
@@ -4466,15 +4938,13 @@ app.get(
             .from(
               'ad_campaigns'
             )
-            .select(
-              `
+            .select(`
               id,
               title,
               advertiser_name,
               impressions,
               clicks
-              `
-            )
+            `)
             .order(
               'impressions',
               {
@@ -4565,16 +5035,14 @@ app.get(
         .from(
           'newsletter_subscribers'
         )
-        .select(
-          `
+        .select(`
           id,
           email,
           name,
           categories,
           status,
           created_at
-          `
-        )
+        `)
         .order(
           'created_at',
           {
@@ -4914,6 +5382,7 @@ app.post(
 
 /* =========================================================
    CRON SYNC
+   FIXED VERSION
 ========================================================= */
 
 app.get(
@@ -4930,6 +5399,9 @@ app.get(
       return response
         .status(503)
         .json({
+          ok:
+            false,
+
           error:
             'CRON_SECRET belum diatur'
         });
@@ -4960,44 +5432,128 @@ app.get(
       return response
         .status(401)
         .json({
+          ok:
+            false,
+
           error:
             'Unauthorized'
         });
     }
 
     try {
+      if (!adminClient) {
+        throw new Error(
+          'Supabase admin client belum dikonfigurasi'
+        );
+      }
+
+      /*
+       * STEP 1
+       * Sync RSS feeds.
+       */
       const result =
         await syncFeeds();
 
-      const trendResult =
-        await adminClient
-          .rpc(
+      /*
+       * STEP 2
+       * Rebuild intelligence.
+       *
+       * FIX UTAMA:
+       * Tidak menggunakan:
+       *
+       * adminClient.rpc(...).catch(...)
+       */
+      let intelligenceError =
+        null;
+
+      try {
+        const {
+          error
+        } =
+          await adminClient.rpc(
             'rebuild_article_intelligence'
-          )
-          .catch(
-            () => ({
-              error:
-                null
-            })
           );
 
-      await adminClient
-        .rpc(
-          'rebuild_trending'
-        );
+        intelligenceError =
+          error || null;
 
-      await adminClient
-        .rpc(
-          'rebuild_live_events'
-        )
-        .catch(
-          () => {}
-        );
+      } catch (error) {
+        intelligenceError =
+          error;
+      }
 
-      if (
-        trendResult?.error
-      ) {
-        throw trendResult.error;
+      /*
+       * Intelligence tidak harus
+       * menghentikan sync utama.
+       */
+      if (intelligenceError) {
+        console.error(
+          '[CRON] rebuild_article_intelligence:',
+          intelligenceError.message ||
+          intelligenceError
+        );
+      }
+
+      /*
+       * STEP 3
+       * Rebuild trending.
+       */
+      let trendingError =
+        null;
+
+      try {
+        const {
+          error
+        } =
+          await adminClient.rpc(
+            'rebuild_trending'
+          );
+
+        trendingError =
+          error || null;
+
+      } catch (error) {
+        trendingError =
+          error;
+      }
+
+      if (trendingError) {
+        console.error(
+          '[CRON] rebuild_trending:',
+          trendingError.message ||
+          trendingError
+        );
+      }
+
+      /*
+       * STEP 4
+       * Rebuild live events.
+       */
+      let liveEventsError =
+        null;
+
+      try {
+        const {
+          error
+        } =
+          await adminClient.rpc(
+            'rebuild_live_events'
+          );
+
+        liveEventsError =
+          error || null;
+
+      } catch (error) {
+        liveEventsError =
+          error;
+      }
+
+      if (liveEventsError) {
+        console.error(
+          '[CRON] rebuild_live_events:',
+          liveEventsError.message ||
+          liveEventsError
+        );
       }
 
       response.json({
@@ -5006,12 +5562,32 @@ app.get(
 
         result,
 
+        intelligence:
+          intelligenceError
+            ? 'warning'
+            : 'ok',
+
+        trending:
+          trendingError
+            ? 'warning'
+            : 'ok',
+
+        liveEvents:
+          liveEventsError
+            ? 'warning'
+            : 'ok',
+
         updatedAt:
           new Date()
             .toISOString()
       });
 
     } catch (error) {
+      console.error(
+        '[CRON SYNC]',
+        error
+      );
+
       response
         .status(500)
         .json({
@@ -5019,7 +5595,8 @@ app.get(
             false,
 
           error:
-            error.message
+            error.message ||
+            'Sync gagal'
         });
     }
   }
@@ -5044,13 +5621,11 @@ app.get(
         await Promise.all([
           supabase
             .from('articles')
-            .select(
-              `
+            .select(`
               id,
               published_at,
               updated_at
-              `
-            )
+            `)
             .eq(
               'status',
               'published'
@@ -5066,13 +5641,11 @@ app.get(
 
           supabase
             .from('videos')
-            .select(
-              `
+            .select(`
               id,
               created_at,
               updated_at
-              `
-            )
+            `)
             .eq(
               'status',
               'published'
@@ -5113,8 +5686,8 @@ app.get(
         urls.push(
           `<url>
 <loc>${esc(
-            baseUrl
-          )}/berita/${article.id}</loc>
+  baseUrl
+)}/berita/${article.id}</loc>
 ${
   date
     ? `<lastmod>${new Date(
@@ -5138,8 +5711,8 @@ ${
         urls.push(
           `<url>
 <loc>${esc(
-            baseUrl
-          )}/video/${video.id}</loc>
+  baseUrl
+)}/video/${video.id}</loc>
 ${
   date
     ? `<lastmod>${new Date(
@@ -5185,6 +5758,28 @@ const healthHandler =
     response
   ) => {
     try {
+      if (!adminClient) {
+        return response
+          .status(503)
+          .json({
+            ok:
+              false,
+
+            version:
+              '5.5.1',
+
+            database:
+              false,
+
+            error:
+              'Supabase admin client belum dikonfigurasi',
+
+            time:
+              new Date()
+                .toISOString()
+          });
+      }
+
       const [
         databaseResult,
         lastRunResult,
@@ -5200,13 +5795,11 @@ const healthHandler =
             .from(
               'sync_runs'
             )
-            .select(
-              `
+            .select(`
               status,
               finished_at,
               started_at
-              `
-            )
+            `)
             .order(
               'started_at',
               {
@@ -5241,7 +5834,7 @@ const healthHandler =
               false,
 
             version:
-              '5.5.0',
+              '5.5.1',
 
             database:
               false,
@@ -5262,7 +5855,7 @@ const healthHandler =
           true,
 
         version:
-          '5.5.0',
+          '5.5.1',
 
         database:
           true,
@@ -5290,7 +5883,7 @@ const healthHandler =
             false,
 
           version:
-            '5.5.0',
+            '5.5.1',
 
           database:
             false,
@@ -5307,12 +5900,24 @@ const healthHandler =
 
 app.get(
   '/api/system/config',
-  (request, response) => {
+
+  (
+    request,
+    response
+  ) => {
     response.json({
-      ok: true,
-      supabaseConfigured: isSupabaseConfigured,
+      ok:
+        true,
+
+      supabaseConfigured:
+        isSupabaseConfigured,
+
       missingEnvironmentVariables,
-      message: isSupabaseConfigured ? 'Live data engine siap.' : 'Live data membutuhkan environment variables Supabase.'
+
+      message:
+        isSupabaseConfigured
+          ? 'Live data engine siap.'
+          : 'Live data membutuhkan environment variables Supabase.'
     });
   }
 );
@@ -5390,12 +5995,16 @@ app.use(
     response,
     next
   ) => {
-    console.error(error);
+    console.error(
+      error
+    );
 
     if (
       response.headersSent
     ) {
-      return next(error);
+      return next(
+        error
+      );
     }
 
     response
@@ -5415,6 +6024,7 @@ export default app;
 
 /* =========================================================
    LOCAL SERVER ONLY
+   FIXED VERSION
 ========================================================= */
 
 if (
@@ -5425,46 +6035,117 @@ if (
     PORT,
     () => {
       console.log(
-        `BERITA MUDA INDONESIA V5.5 running on :${PORT}`
+        `BERITA MUDA INDONESIA V5.5.1 running on :${PORT}`
       );
     }
   );
 
   const runCycle =
     async () => {
-      if (!isSupabaseConfigured || !adminClient) {
-        console.warn('Sync cycle skipped: Supabase environment belum lengkap.');
+      if (
+        !isSupabaseConfigured ||
+        !adminClient
+      ) {
+        console.warn(
+          'Sync cycle skipped: Supabase environment belum lengkap.'
+        );
+
         return;
       }
 
-      await syncFeeds()
-        .catch(
-          console.error
-        );
+      /*
+       * RSS SYNC
+       */
+      try {
+        await syncFeeds();
 
-      await adminClient
-        .rpc(
-          'rebuild_article_intelligence'
-        )
-        .catch(
-          console.error
+      } catch (error) {
+        console.error(
+          '[SYNC] syncFeeds:',
+          error
         );
+      }
 
-      await adminClient
-        .rpc(
-          'rebuild_trending'
-        )
-        .catch(
-          console.error
-        );
+      /*
+       * ARTICLE INTELLIGENCE
+       *
+       * FIX:
+       * Tidak menggunakan rpc(...).catch(...)
+       */
+      try {
+        const {
+          error
+        } =
+          await adminClient.rpc(
+            'rebuild_article_intelligence'
+          );
 
-      await adminClient
-        .rpc(
-          'rebuild_live_events'
-        )
-        .catch(
-          console.error
+        if (error) {
+          console.error(
+            '[SYNC] rebuild_article_intelligence:',
+            error.message ||
+            error
+          );
+        }
+
+      } catch (error) {
+        console.error(
+          '[SYNC] rebuild_article_intelligence failed:',
+          error
         );
+      }
+
+      /*
+       * TRENDING
+       */
+      try {
+        const {
+          error
+        } =
+          await adminClient.rpc(
+            'rebuild_trending'
+          );
+
+        if (error) {
+          console.error(
+            '[SYNC] rebuild_trending:',
+            error.message ||
+            error
+          );
+        }
+
+      } catch (error) {
+        console.error(
+          '[SYNC] rebuild_trending failed:',
+          error
+        );
+      }
+
+      /*
+       * LIVE EVENTS
+       */
+      try {
+        const {
+          error
+        } =
+          await adminClient.rpc(
+            'rebuild_live_events'
+          );
+
+        if (error) {
+          console.error(
+            '[SYNC] rebuild_live_events:',
+            error.message ||
+            error
+          );
+        }
+
+      } catch (error) {
+        console.error(
+          '[SYNC] rebuild_live_events failed:',
+          error
+        );
+      }
     };
 
   setTimeout(
@@ -5477,6 +6158,7 @@ if (
 
     Math.max(
       1,
+
       Number(
         process.env
           .SYNC_INTERVAL_MINUTES
