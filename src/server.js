@@ -5932,3 +5932,88 @@ if (
       60_000
   );
 }
+
+/* ============================================================
+   MUDA INDONESIA
+   SYSTEM HEALTH CHECK ENDPOINT
+   ============================================================ */
+
+app.get('/api/admin/system-health', async (req, res) => {
+
+    try {
+
+        const {
+            data,
+            error
+        } = await supabase
+            .rpc('get_full_system_health');
+
+
+        if (error) {
+
+            console.error(
+                '[SYSTEM HEALTH ERROR]',
+                error
+            );
+
+
+            return res.status(500).json({
+
+                success: false,
+
+                message:
+                    'Failed to check system health',
+
+                error:
+                    error.message
+
+            });
+
+        }
+
+
+        const health =
+            Array.isArray(data)
+                ? data[0]
+                : data;
+
+
+        console.log(
+            '[SYSTEM HEALTH]',
+            health
+        );
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            data: health
+
+        });
+
+
+    } catch (error) {
+
+
+        console.error(
+            '[SYSTEM HEALTH SERVER ERROR]',
+            error
+        );
+
+
+        return res.status(500).json({
+
+            success: false,
+
+            message:
+                'Internal server error',
+
+            error:
+                error.message
+
+        });
+
+    }
+
+});
