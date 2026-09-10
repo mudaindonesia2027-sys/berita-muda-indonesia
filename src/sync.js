@@ -1,7 +1,6 @@
 import 'dotenv/config';
 
 import crypto from 'node:crypto';
-
 import Parser from 'rss-parser';
 
 import {
@@ -10,1019 +9,406 @@ import {
 
 
 /* =========================================================
-   CONFIG
-========================================================= */
-
-const RSS_TIMEOUT =
-  Number(
-    process.env.RSS_TIMEOUT
-  ) || 12000;
-
-
-const RSS_RETRIES =
-  Number(
-    process.env.RSS_RETRIES
-  ) || 2;
-
-
-const MAX_ITEMS_PER_FEED =
-  Number(
-    process.env.MAX_ITEMS_PER_FEED
-  ) || 40;
-
-
-const MAX_VIDEO_ITEMS_PER_FEED =
-  Number(
-    process.env.MAX_VIDEO_ITEMS_PER_FEED
-  ) || 25;
-
-
-const SYNC_LOCK_TTL =
-  Number(
-    process.env.SYNC_LOCK_TTL
-  ) || 240;
-
-
-/* =========================================================
-   RSS PARSER
+   RSS CONFIG
 ========================================================= */
 
 const parser =
   new Parser({
-
-    timeout:
-      RSS_TIMEOUT,
+    timeout: 15000,
 
     headers: {
-
       'User-Agent':
-        'BeritaMudaIndonesia/6.0 RSS Sync'
-
-    },
-
-    customFields: {
-
-      item: [
-
-        [
-          'content:encoded',
-          'contentEncoded'
-        ],
-
-        [
-          'media:content',
-          'mediaContent'
-        ],
-
-        [
-          'media:thumbnail',
-          'mediaThumbnail'
-        ],
-
-        [
-          'yt:videoId',
-          'youtubeVideoId'
-        ]
-
-      ]
-
+        'BeritaMudaIndonesia/5.2 RSS Sync'
     }
-
   });
 
 
-/* =========================================================
-   ENVIRONMENT FEEDS
-========================================================= */
+const feeds =
+  (
+    process.env.RSS_FEEDS ||
+    ''
+  )
 
-function parseFeeds(
-  value = ''
-) {
-
-  return String(value)
-
-    .split(
-      /[\n,]+/
-    )
+    .split(',')
 
     .map(
-      item =>
-        item.trim()
+      value =>
+        value.trim()
     )
 
-    .filter(Boolean)
-
-    .filter(
-      item =>
-        /^https?:\/\//i.test(
-          item
-        )
-    );
-
-}
-
-
-/*
- * RSS berita
- *
- * Contoh:
- *
- * RSS_FEEDS=
- * https://example.com/rss,
- * https://example.com/feed
- */
-
-const articleFeeds =
-  parseFeeds(
-    process.env.RSS_FEEDS
-  );
-
-
-/*
- * RSS video
- *
- * Bisa menggunakan:
- *
- * VIDEO_FEEDS
- *
- * Contoh YouTube:
- *
- * https://www.youtube.com/feeds/videos.xml?channel_id=CHANNEL_ID
- */
-
-const videoFeeds =
-  parseFeeds(
-    process.env.VIDEO_FEEDS
-  );
+    .filter(Boolean);
 
 
 /* =========================================================
    HELPERS
 ========================================================= */
 
-function sleep(ms) {
+const stripHtml =
+  (value = '') =>
+    String(value)
 
-  return new Promise(
-    resolve =>
-      setTimeout(
-        resolve,
-        ms
+      .replace(
+        /<script[\s\S]*?<\/script>/gi,
+        ' '
       )
-  );
 
-}
+      .replace(
+        /<style[\s\S]*?<\/style>/gi,
+        ' '
+      )
 
+      .replace(
+        /<[^>]+>/g,
+        ' '
+      )
 
-function stripHtml(
-  value = ''
-) {
+      .replace(
+        /\s+/g,
+        ' '
+      )
 
-  return String(value)
-
-    .replace(
-      /<script[\s\S]*?<\/script>/gi,
-      ' '
-    )
-
-    .replace(
-      /<style[\s\S]*?<\/style>/gi,
-      ' '
-    )
-
-    .replace(
-      /<[^>]+>/g,
-      ' '
-    )
-
-    .replace(
-      /&nbsp;/gi,
-      ' '
-    )
-
-    .replace(
-      /&amp;/gi,
-      '&'
-    )
-
-    .replace(
-      /&quot;/gi,
-      '"'
-    )
-
-    .replace(
-      /&#39;/gi,
-      "'"
-    )
-
-    .replace(
-      /\s+/g,
-      ' '
-    )
-
-    .trim();
-
-}
+      .trim();
 
 
-function safeHtml(
-  value = ''
-) {
+const safeHtmlFromFeed =
+  (value = '') =>
+    String(value)
 
-  return String(value)
+      .replace(
+        /<script[\s\S]*?<\/script>/gi,
+        ''
+      )
 
-    .replace(
-      /<script[\s\S]*?<\/script>/gi,
-      ''
-    )
+      .replace(
+        /<style[\s\S]*?<\/style>/gi,
+        ''
+      )
 
-    .replace(
-      /<style[\s\S]*?<\/style>/gi,
-      ''
-    )
+      .replace(
+        /\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi,
+        ''
+      )
 
-    .replace(
-      /\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi,
-      ''
-    )
+      .replace(
+        /javascript:/gi,
+        ''
+      )
 
-    .replace(
-      /javascript:/gi,
-      ''
-    )
-
-    .trim();
-
-}
+      .trim();
 
 
-function normalizeText(
-  value = ''
-) {
+const canonicalUrl =
+  (value = '') => {
 
-  return stripHtml(
-    value
-  )
+    try {
 
-    .toLowerCase()
-
-    .replace(
-      /[^\p{L}\p{N}\s]/gu,
-      ' '
-    )
-
-    .replace(
-      /\s+/g,
-      ' '
-    )
-
-    .trim();
-
-}
+      const url =
+        new URL(value);
 
 
-function hash(
-  value = ''
-) {
-
-  return crypto
-
-    .createHash(
-      'sha256'
-    )
-
-    .update(
-      String(value)
-    )
-
-    .digest(
-      'hex'
-    );
-
-}
+      url.hash =
+        '';
 
 
-function canonicalUrl(
-  value = ''
-) {
-
-  try {
-
-    const url =
-      new URL(
-        value
-      );
-
-
-    url.hash =
-      '';
-
-
-    const remove =
       [
-
-        'fbclid',
-
-        'gclid',
-
         'utm_source',
-
         'utm_medium',
-
         'utm_campaign',
-
         'utm_term',
+        'utm_content',
+        'fbclid',
+        'gclid'
+      ]
 
-        'utm_content'
-
-      ];
-
-
-    for (
-      const key
-      of remove
-    ) {
-
-      url.searchParams.delete(
-        key
-      );
-
-    }
+        .forEach(
+          key =>
+            url.searchParams.delete(
+              key
+            )
+        );
 
 
-    for (
-      const key
-      of [
+      [
         ...url.searchParams.keys()
       ]
-    ) {
+
+        .forEach(
+          key => {
+
+            if (
+
+              key
+                .toLowerCase()
+                .startsWith(
+                  'utm_'
+                )
+
+            ) {
+
+              url.searchParams.delete(
+                key
+              );
+
+            }
+
+          }
+        );
+
+
+      url.hostname =
+        url.hostname
+          .toLowerCase();
+
 
       if (
 
-        key
-          .toLowerCase()
-          .startsWith(
-            'utm_'
-          )
+        url.pathname !==
+        '/'
 
       ) {
 
-        url.searchParams.delete(
-          key
-        );
+        url.pathname =
+          url.pathname.replace(
+            /\/+$/,
+            ''
+          );
 
       }
 
+
+      return url.toString();
+
     }
 
+    catch {
 
-    url.hostname =
-      url.hostname
+      return String(
+        value ||
+        ''
+      )
+
+        .trim();
+
+    }
+
+  };
+
+
+const normalizeTitle =
+  (value = '') =>
+    stripHtml(value)
+
+      .toLowerCase()
+
+      .replace(
+        /[^\p{L}\p{N}\s]/gu,
+        ' '
+      )
+
+      .replace(
+        /\s+/g,
+        ' '
+      )
+
+      .trim();
+
+
+const fingerprintOf =
+  ({
+    title,
+    summary,
+    source
+  }) =>
+
+    crypto
+
+      .createHash(
+        'sha256'
+      )
+
+      .update(
+
+        `${normalizeTitle(title)}|${stripHtml(summary).slice(0, 500)}|${String(source || '').toLowerCase()}`
+
+      )
+
+      .digest(
+        'hex'
+      );
+
+
+const eventKeyOf =
+  ({
+    title,
+    category
+  }) =>
+
+    crypto
+
+      .createHash(
+        'sha256'
+      )
+
+      .update(
+
+        `${normalizeTitle(title)
+          .split(' ')
+          .slice(0, 14)
+          .join(' ')}|${category || ''}`
+
+      )
+
+      .digest(
+        'hex'
+      )
+
+      .slice(
+        0,
+        32
+      );
+
+
+const categoryFor =
+  (
+    url,
+    title = ''
+  ) => {
+
+    const text =
+      (
+        url +
+        ' ' +
+        title
+      )
+
         .toLowerCase();
 
 
-    if (
+    const categories = {
 
-      url.pathname !==
-      '/'
-
-    ) {
-
-      url.pathname =
-        url.pathname.replace(
-          /\/+$/,
-          ''
-        );
-
-    }
-
-
-    return url.toString();
-
-  }
-
-  catch {
-
-    return String(
-      value ||
-      ''
-    ).trim();
-
-  }
-
-}
-
-
-/* =========================================================
-   CATEGORY DETECTION
-========================================================= */
-
-function categoryFor(
-  text = ''
-) {
-
-  const value =
-    String(text)
-      .toLowerCase();
-
-
-  const rules = [
-
-    {
-
-      category:
+      politik:
         'POLITIK',
 
-      keywords:
-        [
-          'politik',
-          'presiden',
-          'menteri',
-          'pemerintah',
-          'dpr',
-          'pilkada',
-          'pemilu'
-        ]
+      hukum:
+        'HUKUM',
 
-    },
-
-    {
-
-      category:
+      ekonomi:
         'EKONOMI',
 
-      keywords:
-        [
-          'ekonomi',
-          'bisnis',
-          'saham',
-          'bank',
-          'investasi',
-          'keuangan',
-          'rupiah'
-        ]
-
-    },
-
-    {
-
-      category:
+      teknologi:
         'TEKNOLOGI',
 
-      keywords:
-        [
-          'teknologi',
-          'digital',
-          'internet',
-          'ai',
-          'artificial intelligence',
-          'startup'
-        ]
-
-    },
-
-    {
-
-      category:
+      olahraga:
         'OLAHRAGA',
 
-      keywords:
-        [
-          'olahraga',
-          'sport',
-          'bola',
-          'sepak bola',
-          'football',
-          'liga'
-        ]
-
-    },
-
-    {
-
-      category:
-        'HIBURAN',
-
-      keywords:
-        [
-          'hiburan',
-          'musik',
-          'film',
-          'artis',
-          'selebriti',
-          'entertainment'
-        ]
-
-    },
-
-    {
-
-      category:
+      internasional:
         'INTERNASIONAL',
 
-      keywords:
-        [
-          'internasional',
-          'dunia',
-          'global',
-          'amerika',
-          'eropa',
-          'asia'
-        ]
+      hiburan:
+        'HIBURAN',
 
-    },
+      lifestyle:
+        'LIFESTYLE'
 
-    {
+    };
 
-      category:
-        'KESEHATAN',
-
-      keywords:
-        [
-          'kesehatan',
-          'rumah sakit',
-          'dokter',
-          'medis',
-          'penyakit'
-        ]
-
-    },
-
-    {
-
-      category:
-        'PENDIDIKAN',
-
-      keywords:
-        [
-          'pendidikan',
-          'sekolah',
-          'kampus',
-          'universitas',
-          'mahasiswa'
-        ]
-
-    }
-
-  ];
-
-
-  for (
-    const rule
-    of rules
-  ) {
 
     for (
-      const keyword
-      of rule.keywords
-    ) {
-
-      if (
-        value.includes(
-          keyword
-        )
-      ) {
-
-        return rule.category;
-
-      }
-
-    }
-
-  }
-
-
-  return 'NASIONAL';
-
-}
-
-
-/* =========================================================
-   AUTHOR
-========================================================= */
-
-function authorOf(
-  item = {}
-) {
-
-  const value =
-
-    item.creator ||
-
-    item.author ||
-
-    item['dc:creator'] ||
-
-    item['dc:Creator'] ||
-
-    item.itunes?.author ||
-
-    '';
-
-
-  return String(
-    value
-  )
-
-    .trim()
-
-    .slice(
-      0,
-      160
-    )
-
-    || null;
-
-}
-
-
-/* =========================================================
-   ITEM URL
-========================================================= */
-
-function itemUrl(
-  item = {}
-) {
-
-  if (
-
-    typeof item.link ===
-    'string'
-
-  ) {
-
-    return item.link;
-
-  }
-
-
-  if (
-
-    item.link &&
-    typeof item.link ===
-    'object'
-
-  ) {
-
-    return (
-
-      item.link.href ||
-
-      item.link.url ||
-
-      ''
-
-    );
-
-  }
-
-
-  return (
-
-    item.guid ||
-
-    item.id ||
-
-    ''
-
-  );
-
-}
-
-
-/* =========================================================
-   IMAGE
-========================================================= */
-
-function imageOf(
-  item = {}
-) {
-
-  const candidates =
-    [
-
-      item?.enclosure?.url,
-
-      item?.mediaContent?.url,
-
-      item?.mediaContent,
-
-      item?.mediaThumbnail?.url,
-
-      item?.mediaThumbnail,
-
-      item?.['media:content']?.url,
-
-      item?.['media:thumbnail']?.url,
-
-      item?.itunes?.image,
-
-      item?.image?.url,
-
-      item?.image,
-
-      item?.thumbnail,
-
-      item?.thumbnail_url,
-
-      item?.image_url
-
-    ];
-
-
-  for (
-    const candidate
-    of candidates
-  ) {
-
-    if (
-
-      typeof candidate ===
-      'string'
-
-    ) {
-
-      const value =
-        candidate.trim();
-
-
-      if (
-
-        /^https?:\/\//i.test(
-          value
-        )
-
-      ) {
-
-        return value;
-
-      }
-
-    }
-
-
-    if (
-
-      candidate &&
-      typeof candidate ===
-      'object'
-
-    ) {
-
-      const value =
-
-        candidate.url ||
-
-        candidate.href ||
-
-        candidate.$?.url ||
-
-        null;
-
-
-      if (
-
-        value &&
-        /^https?:\/\//i.test(
-          value
-        )
-
-      ) {
-
-        return value;
-
-      }
-
-    }
-
-  }
-
-
-  return null;
-
-}
-
-
-/* =========================================================
-   YOUTUBE VIDEO ID
-========================================================= */
-
-function youtubeIdFromUrl(
-  value = ''
-) {
-
-  try {
-
-    const url =
-      new URL(
-        value
-      );
-
-
-    if (
-
-      url.hostname ===
-      'youtu.be'
-
-    ) {
-
-      return (
-        url.pathname
-          .split('/')
-          .filter(Boolean)[0]
-        ||
-        null
-      );
-
-    }
-
-
-    if (
-
-      url.hostname.includes(
-        'youtube.com'
+      const [
+        keyword,
+        category
+      ]
+
+      of Object.entries(
+        categories
       )
 
     ) {
 
-      const id =
-        url.searchParams.get(
-          'v'
-        );
-
-
-      if (
-        id
-      ) {
-
-        return id;
-
-      }
-
-
-      const parts =
-        url.pathname
-          .split('/')
-          .filter(Boolean);
-
-
-      const index =
-        parts.findIndex(
-          value =>
-
-            value ===
-            'shorts'
-
-            ||
-
-            value ===
-            'embed'
-        );
-
-
       if (
 
-        index >= 0 &&
-
-        parts[
-          index + 1
-        ]
+        text.includes(
+          keyword
+        )
 
       ) {
 
-        return parts[
-          index + 1
-        ];
+        return category;
 
       }
 
     }
 
-  }
 
-  catch {
+    return 'NASIONAL';
 
-    return null;
-
-  }
+  };
 
 
-  return null;
+const authorOf =
+  item =>
 
-}
+    String(
 
+      item.creator ||
 
-/* =========================================================
-   VIDEO URL
-========================================================= */
+      item.author ||
 
-function videoUrlOf(
-  item = {}
-) {
+      item['dc:creator'] ||
 
-  const direct =
-    itemUrl(
-      item
-    );
+      item['dc:Creator'] ||
 
+      ''
 
-  const youtubeId =
-
-    item.youtubeVideoId ||
-
-    item['yt:videoId'] ||
-
-    youtubeIdFromUrl(
-      direct
-    );
-
-
-  if (
-    youtubeId
-  ) {
-
-    return (
-      `https://www.youtube.com/watch?v=${youtubeId}`
-    );
-
-  }
-
-
-  const enclosure =
-    item?.enclosure?.url;
-
-
-  if (
-
-    enclosure &&
-    /^https?:\/\//i.test(
-      enclosure
     )
 
-  ) {
+      .trim()
 
-    return enclosure;
+      .slice(
+        0,
+        160
+      )
 
-  }
+      ||
+
+      null;
 
 
-  return direct || null;
+const imageOf =
+  item =>
 
-}
+    item.enclosure?.url ||
+
+    item['media:content']?.url ||
+
+    item['media:thumbnail']?.url ||
+
+    item.itunes?.image ||
+
+    null;
 
 
-/* =========================================================
-   VIDEO THUMBNAIL
-========================================================= */
+const sleep =
+  milliseconds =>
 
-function videoThumbnailOf(
-  item = {}
-) {
-
-  const existing =
-    imageOf(
-      item
+    new Promise(
+      resolve =>
+        setTimeout(
+          resolve,
+          milliseconds
+        )
     );
-
-
-  if (
-    existing
-  ) {
-
-    return existing;
-
-  }
-
-
-  const videoUrl =
-    videoUrlOf(
-      item
-    );
-
-
-  const youtubeId =
-    youtubeIdFromUrl(
-      videoUrl
-    );
-
-
-  if (
-    youtubeId
-  ) {
-
-    return (
-      `https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`
-    );
-
-  }
-
-
-  return null;
-
-}
 
 
 /* =========================================================
    SAFE RPC
+
+   FIX:
+   Jangan gunakan:
+
+   supabase.rpc(...).catch(...)
+
+   Supabase RPC harus di-await terlebih dahulu.
 ========================================================= */
 
 async function safeRpc(
@@ -1036,6 +422,7 @@ async function safeRpc(
       data,
       error
     } =
+
       await supabase.rpc(
         name,
         parameters
@@ -1046,35 +433,21 @@ async function safeRpc(
       error
     ) {
 
-      console.warn(
+      console.error(
 
-        `[SYNC] RPC ${name}:`,
+        `[SYNC RPC] ${name}:`,
 
         error.message ||
         error
 
       );
 
-
-      return {
-
-        ok:
-          false,
-
-        error
-
-      };
-
     }
 
 
     return {
-
-      ok:
-        true,
-
-      data
-
+      data,
+      error
     };
 
   }
@@ -1083,9 +456,9 @@ async function safeRpc(
     error
   ) {
 
-    console.warn(
+    console.error(
 
-      `[SYNC] RPC ${name} failed:`,
+      `[SYNC RPC FAILED] ${name}:`,
 
       error.message ||
       error
@@ -1095,8 +468,8 @@ async function safeRpc(
 
     return {
 
-      ok:
-        false,
+      data:
+        null,
 
       error
 
@@ -1108,37 +481,46 @@ async function safeRpc(
 
 
 /* =========================================================
-   FETCH FEED
+   FETCH RSS
 ========================================================= */
 
 async function fetchFeed(
-  feedUrl
+  url
 ) {
 
-  let lastError =
-    null;
+  let lastError;
 
 
   for (
 
     let attempt = 0;
 
-    attempt <=
-    RSS_RETRIES;
+    attempt < 3;
 
     attempt++
 
   ) {
 
+    const started =
+      Date.now();
+
+
     try {
 
-      const feed =
-        await parser.parseURL(
-          feedUrl
-        );
+      return {
 
+        feed:
 
-      return feed;
+          await parser.parseURL(
+            url
+          ),
+
+        latency:
+
+          Date.now() -
+          started
+
+      };
 
     }
 
@@ -1151,18 +533,16 @@ async function fetchFeed(
 
 
       if (
-
-        attempt <
-        RSS_RETRIES
-
+        attempt < 2
       ) {
 
         await sleep(
 
-          700 *
+          500 *
+
           (
-            attempt +
-            1
+            2 **
+            attempt
           )
 
         );
@@ -1180,1135 +560,16 @@ async function fetchFeed(
 
 
 /* =========================================================
-   ARTICLE ROW
-========================================================= */
-
-function createArticleRow({
-
-  item,
-
-  feedUrl,
-
-  source
-
-}) {
-
-  const title =
-    stripHtml(
-      item.title ||
-      ''
-    )
-
-      .slice(
-        0,
-        500
-      );
-
-
-  const url =
-    canonicalUrl(
-      itemUrl(
-        item
-      )
-    );
-
-
-  if (
-
-    !title ||
-
-    !url
-
-  ) {
-
-    return null;
-
-  }
-
-
-  const rawContent =
-
-    item.contentEncoded ||
-
-    item['content:encoded'] ||
-
-    item.content ||
-
-    item.contentSnippet ||
-
-    item.summary ||
-
-    item.description ||
-
-    '';
-
-
-  const content =
-    stripHtml(
-      rawContent
-    );
-
-
-  const contentHtml =
-    safeHtml(
-
-      item.contentEncoded ||
-
-      item['content:encoded'] ||
-
-      item.content ||
-
-      ''
-
-    );
-
-
-  const category =
-    categoryFor(
-
-      `${title} ${feedUrl}`
-
-    );
-
-
-  const publishedAt =
-
-    item.isoDate ||
-
-    item.pubDate ||
-
-    item.published ||
-
-    new Date()
-      .toISOString();
-
-
-  const summary =
-    content
-
-      .slice(
-        0,
-        1000
-      );
-
-
-  return {
-
-    title,
-
-    summary,
-
-    content:
-
-      content
-        .slice(
-          0,
-          50000
-        )
-
-      ||
-
-      null,
-
-
-    content_html:
-
-      contentHtml
-        .slice(
-          0,
-          50000
-        )
-
-      ||
-
-      null,
-
-
-    url,
-
-    canonical_url:
-      url,
-
-
-    source_url:
-      url,
-
-
-    image_url:
-      imageOf(
-        item
-      ),
-
-
-    source,
-
-
-    author_name:
-      authorOf(
-        item
-      ),
-
-
-    category,
-
-
-    tags:
-      [],
-
-
-    published_at:
-      publishedAt,
-
-
-    status:
-      'published',
-
-
-    content_source:
-      'rss',
-
-
-    content_available:
-      content.length >=
-      80,
-
-
-    editorial_status:
-      'auto',
-
-
-    content_fingerprint:
-
-      hash(
-
-        `${normalizeText(title)}|${url}`
-
-      ),
-
-
-    event_key:
-
-      hash(
-
-        `${normalizeText(title).split(' ').slice(0, 12).join(' ')}|${category}`
-
-      )
-
-        .slice(
-          0,
-          32
-        )
-
-  };
-
-}
-
-
-/* =========================================================
-   VIDEO ROW
-========================================================= */
-
-function createVideoRow({
-
-  item,
-
-  feedUrl,
-
-  source
-
-}) {
-
-  const title =
-    stripHtml(
-      item.title ||
-      ''
-    )
-
-      .slice(
-        0,
-        500
-      );
-
-
-  const videoUrl =
-    videoUrlOf(
-      item
-    );
-
-
-  if (
-
-    !title ||
-
-    !videoUrl
-
-  ) {
-
-    return null;
-
-  }
-
-
-  const rawDescription =
-
-    item.contentSnippet ||
-
-    item.summary ||
-
-    item.description ||
-
-    item.content ||
-
-    '';
-
-
-  const description =
-    stripHtml(
-      rawDescription
-    )
-
-      .slice(
-        0,
-        5000
-      );
-
-
-  const category =
-    categoryFor(
-
-      `${title} ${feedUrl}`
-
-    );
-
-
-  const publishedAt =
-
-    item.isoDate ||
-
-    item.pubDate ||
-
-    item.published ||
-
-    new Date()
-      .toISOString();
-
-
-  return {
-
-    title,
-
-
-    description:
-      description ||
-      null,
-
-
-    video_url:
-      canonicalUrl(
-        videoUrl
-      ),
-
-
-    thumbnail_url:
-      videoThumbnailOf(
-        item
-      ),
-
-
-    source,
-
-
-    category,
-
-
-    author_name:
-      authorOf(
-        item
-      ),
-
-
-    tags:
-      [],
-
-
-    status:
-      'published',
-
-
-    created_at:
-      publishedAt,
-
-
-    updated_at:
-
-      new Date()
-        .toISOString()
-
-  };
-
-}
-
-
-/* =========================================================
-   SAVE ARTICLES
-========================================================= */
-
-async function saveArticles(
-  rows
-) {
-
-  if (
-    !rows.length
-  ) {
-
-    return 0;
-
-  }
-
-
-  let saved =
-    0;
-
-
-  for (
-    const row
-    of rows
-  ) {
-
-    try {
-
-      const existing =
-        await supabase
-
-          .from(
-            'articles'
-          )
-
-          .select(
-            'id'
-          )
-
-          .eq(
-            'url',
-            row.url
-          )
-
-          .maybeSingle();
-
-
-      if (
-        existing.error
-      ) {
-
-        throw existing.error;
-
-      }
-
-
-      if (
-        existing.data
-      ) {
-
-        const {
-          error
-        } =
-          await supabase
-
-            .from(
-              'articles'
-            )
-
-            .update({
-
-              ...row,
-
-              updated_at:
-
-                new Date()
-                  .toISOString()
-
-            })
-
-            .eq(
-              'id',
-              existing.data.id
-            );
-
-
-        if (
-          error
-        ) {
-
-          throw error;
-
-        }
-
-      }
-
-      else {
-
-        const {
-          error
-        } =
-          await supabase
-
-            .from(
-              'articles'
-            )
-
-            .insert(
-              row
-            );
-
-
-        if (
-          error
-        ) {
-
-          throw error;
-
-        }
-
-      }
-
-
-      saved++;
-
-    }
-
-    catch (
-      error
-    ) {
-
-      console.error(
-
-        '[SYNC ARTICLE]',
-
-        row.title,
-
-        error.message ||
-        error
-
-      );
-
-    }
-
-  }
-
-
-  return saved;
-
-}
-
-
-/* =========================================================
-   SAVE VIDEOS
-
-   Tidak memakai onConflict karena struktur constraint
-   tabel videos di project bisa berbeda.
-
-   Sistem akan cek video_url terlebih dahulu.
-========================================================= */
-
-async function saveVideos(
-  rows
-) {
-
-  if (
-    !rows.length
-  ) {
-
-    return 0;
-
-  }
-
-
-  let saved =
-    0;
-
-
-  for (
-    const row
-    of rows
-  ) {
-
-    try {
-
-      const existing =
-        await supabase
-
-          .from(
-            'videos'
-          )
-
-          .select(
-            'id'
-          )
-
-          .eq(
-            'video_url',
-            row.video_url
-          )
-
-          .maybeSingle();
-
-
-      if (
-        existing.error
-      ) {
-
-        throw existing.error;
-
-      }
-
-
-      if (
-        existing.data
-      ) {
-
-        const {
-          error
-        } =
-          await supabase
-
-            .from(
-              'videos'
-            )
-
-            .update({
-
-              title:
-                row.title,
-
-              description:
-                row.description,
-
-              thumbnail_url:
-                row.thumbnail_url,
-
-              source:
-                row.source,
-
-              category:
-                row.category,
-
-              author_name:
-                row.author_name,
-
-              tags:
-                row.tags,
-
-              status:
-                'published',
-
-              updated_at:
-
-                new Date()
-                  .toISOString()
-
-            })
-
-            .eq(
-              'id',
-              existing.data.id
-            );
-
-
-        if (
-          error
-        ) {
-
-          throw error;
-
-        }
-
-      }
-
-      else {
-
-        const {
-          error
-        } =
-          await supabase
-
-            .from(
-              'videos'
-            )
-
-            .insert(
-              row
-            );
-
-
-        if (
-          error
-        ) {
-
-          throw error;
-
-        }
-
-      }
-
-
-      saved++;
-
-    }
-
-    catch (
-      error
-    ) {
-
-      console.error(
-
-        '[SYNC VIDEO]',
-
-        row.title,
-
-        error.message ||
-        error
-
-      );
-
-    }
-
-  }
-
-
-  return saved;
-
-}
-
-
-/* =========================================================
-   SYNC ONE ARTICLE FEED
-========================================================= */
-
-async function syncArticleFeed(
-  feedUrl
-) {
-
-  const started =
-    Date.now();
-
-
-  try {
-
-    const feed =
-      await fetchFeed(
-        feedUrl
-      );
-
-
-    const source =
-      String(
-
-        feed.title ||
-
-        new URL(
-          feedUrl
-        ).hostname ||
-
-        'RSS'
-
-      )
-
-        .trim()
-
-        .slice(
-          0,
-          120
-        );
-
-
-    const rows =
-      (
-
-        feed.items ||
-
-        []
-
-      )
-
-        .slice(
-          0,
-          MAX_ITEMS_PER_FEED
-        )
-
-        .map(
-
-          item =>
-
-            createArticleRow({
-
-              item,
-
-              feedUrl,
-
-              source
-
-            })
-
-        )
-
-        .filter(
-          Boolean
-        );
-
-
-    const saved =
-      await saveArticles(
-        rows
-      );
-
-
-    return {
-
-      ok:
-        true,
-
-
-      type:
-        'article',
-
-
-      feedUrl,
-
-
-      source,
-
-
-      found:
-        rows.length,
-
-
-      saved,
-
-
-      duration:
-        Date.now() -
-        started
-
-    };
-
-  }
-
-  catch (
-    error
-  ) {
-
-    console.error(
-
-      '[ARTICLE FEED ERROR]',
-
-      feedUrl,
-
-      error.message ||
-      error
-
-    );
-
-
-    return {
-
-      ok:
-        false,
-
-
-      type:
-        'article',
-
-
-      feedUrl,
-
-
-      found:
-        0,
-
-
-      saved:
-        0,
-
-
-      duration:
-        Date.now() -
-        started,
-
-
-      error:
-
-        error.message ||
-
-        String(
-          error
-        )
-
-    };
-
-  }
-
-}
-
-
-/* =========================================================
-   SYNC ONE VIDEO FEED
-========================================================= */
-
-async function syncVideoFeed(
-  feedUrl
-) {
-
-  const started =
-    Date.now();
-
-
-  try {
-
-    const feed =
-      await fetchFeed(
-        feedUrl
-      );
-
-
-    const source =
-      String(
-
-        feed.title ||
-
-        new URL(
-          feedUrl
-        ).hostname ||
-
-        'VIDEO'
-
-      )
-
-        .trim()
-
-        .slice(
-          0,
-          120
-        );
-
-
-    const rows =
-      (
-
-        feed.items ||
-
-        []
-
-      )
-
-        .slice(
-          0,
-          MAX_VIDEO_ITEMS_PER_FEED
-        )
-
-        .map(
-
-          item =>
-
-            createVideoRow({
-
-              item,
-
-              feedUrl,
-
-              source
-
-            })
-
-        )
-
-        .filter(
-          Boolean
-        );
-
-
-    const saved =
-      await saveVideos(
-        rows
-      );
-
-
-    return {
-
-      ok:
-        true,
-
-
-      type:
-        'video',
-
-
-      feedUrl,
-
-
-      source,
-
-
-      found:
-        rows.length,
-
-
-      saved,
-
-
-      duration:
-        Date.now() -
-        started
-
-    };
-
-  }
-
-  catch (
-    error
-  ) {
-
-    console.error(
-
-      '[VIDEO FEED ERROR]',
-
-      feedUrl,
-
-      error.message ||
-      error
-
-    );
-
-
-    return {
-
-      ok:
-        false,
-
-
-      type:
-        'video',
-
-
-      feedUrl,
-
-
-      found:
-        0,
-
-
-      saved:
-        0,
-
-
-      duration:
-        Date.now() -
-        started,
-
-
-      error:
-
-        error.message ||
-
-        String(
-          error
-        )
-
-    };
-
-  }
-
-}
-
-
-/* =========================================================
    MAIN SYNC
 ========================================================= */
 
 export async function syncFeeds() {
 
-  const startedAt =
-    new Date()
-      .toISOString();
-
-
   /*
-   * Total feeds
+   * Acquire sync lock
    */
 
-  const totalFeeds =
-    articleFeeds.length +
-    videoFeeds.length;
-
-
-  if (
-    totalFeeds === 0
-  ) {
-
-    return {
-
-      ok:
-        true,
-
-
-      skipped:
-        true,
-
-
-      reason:
-        'RSS_FEEDS dan VIDEO_FEEDS kosong',
-
-
-      articles:
-        {
-
-          feeds:
-            0,
-
-          found:
-            0,
-
-          saved:
-            0
-
-        },
-
-
-      videos:
-        {
-
-          feeds:
-            0,
-
-          found:
-            0,
-
-          saved:
-            0
-
-        },
-
-
-      startedAt,
-
-
-      finishedAt:
-
-        new Date()
-          .toISOString()
-
-    };
-
-  }
-
-
-  /*
-   * Sync lock.
-   *
-   * Jika RPC lock belum tersedia,
-   * sync tetap berjalan.
-   */
-
-  const lockResult =
+  const lock =
     await safeRpc(
 
       'acquire_sync_lock',
@@ -2319,7 +580,7 @@ export async function syncFeeds() {
           'news-sync',
 
         p_ttl_seconds:
-          SYNC_LOCK_TTL
+          240
 
       }
 
@@ -2327,50 +588,41 @@ export async function syncFeeds() {
 
 
   if (
+    lock.error
+  ) {
 
-    lockResult.ok &&
+    throw lock.error;
 
-    lockResult.data ===
-    false
+  }
 
+
+  if (
+    !lock.data
   ) {
 
     return {
 
-      ok:
-        true,
-
-
       skipped:
         true,
 
-
       reason:
-        'sync_locked'
+        'sync_locked',
 
+      at:
+
+        new Date()
+          .toISOString()
 
     };
 
   }
 
 
-  const results =
-    [];
-
-
-  let articleFound =
+  let rowsSeen =
     0;
 
 
-  let articleSaved =
-    0;
-
-
-  let videoFound =
-    0;
-
-
-  let videoSaved =
+  let upserted =
     0;
 
 
@@ -2378,84 +630,595 @@ export async function syncFeeds() {
     0;
 
 
+  let runId =
+    null;
+
+
+  /*
+   * Create sync run
+   */
+
   try {
 
-    /* =====================================================
-       ARTICLE FEEDS
-    ===================================================== */
+    const {
+      data,
+      error
+    } =
 
-    for (
-      const feedUrl
-      of articleFeeds
+      await supabase
+
+        .from(
+          'sync_runs'
+        )
+
+        .insert({
+
+          feeds_total:
+            feeds.length,
+
+          status:
+            'running'
+
+        })
+
+        .select(
+          'id'
+        )
+
+        .single();
+
+
+    if (
+      error
     ) {
 
-      const result =
-        await syncArticleFeed(
-          feedUrl
-        );
+      console.error(
 
+        '[SYNC] Tidak dapat membuat sync_runs:',
 
-      results.push(
-        result
+        error.message ||
+        error
+
       );
-
-
-      articleFound +=
-        result.found ||
-        0;
-
-
-      articleSaved +=
-        result.saved ||
-        0;
-
-
-      if (
-        !result.ok
-      ) {
-
-        failed++;
-
-      }
 
     }
 
+    else {
 
-    /* =====================================================
-       VIDEO FEEDS
-    ===================================================== */
+      runId =
+        data?.id ||
+        null;
+
+    }
+
+  }
+
+  catch (
+    error
+  ) {
+
+    console.error(
+
+      '[SYNC] sync_runs error:',
+
+      error.message ||
+      error
+
+    );
+
+  }
+
+
+  try {
 
     for (
-      const feedUrl
-      of videoFeeds
+      const url
+      of feeds
     ) {
 
-      const result =
-        await syncVideoFeed(
-          feedUrl
-        );
+      const sourceStart =
+        Date.now();
 
 
-      results.push(
-        result
-      );
+      try {
+
+        const {
+          feed,
+          latency
+        } =
+
+          await fetchFeed(
+            url
+          );
 
 
-      videoFound +=
-        result.found ||
-        0;
+        const source =
+
+          (
+            feed.title ||
+            'RSS'
+          )
+
+            .slice(
+              0,
+              120
+            );
 
 
-      videoSaved +=
-        result.saved ||
-        0;
+        /*
+         * Update source status
+         */
+
+        await supabase
+
+          .from(
+            'news_sources'
+          )
+
+          .upsert(
+
+            {
+
+              name:
+                source,
+
+              feed_url:
+                url,
+
+              active:
+                true,
+
+              status:
+                'healthy',
+
+              success_count:
+                1,
+
+              last_success_at:
+
+                new Date()
+                  .toISOString(),
+
+              last_latency_ms:
+                latency,
+
+              updated_at:
+
+                new Date()
+                  .toISOString()
+
+            },
+
+            {
+
+              onConflict:
+                'feed_url'
+
+            }
+
+          );
 
 
-      if (
-        !result.ok
+        /*
+         * Convert RSS items
+         */
+
+        const rows =
+
+          (
+            feed.items ||
+            []
+          )
+
+            .slice(
+              0,
+              80
+            )
+
+            .map(
+
+              item => {
+
+                const rawHtml =
+
+                  item['content:encoded'] ||
+
+                  item.content ||
+
+                  '';
+
+
+                const plain =
+
+                  stripHtml(
+
+                    item.contentSnippet ||
+
+                    rawHtml ||
+
+                    item.summary ||
+
+                    item.description ||
+
+                    ''
+
+                  );
+
+
+                const contentHtml =
+
+                  safeHtmlFromFeed(
+                    rawHtml
+                  );
+
+
+                const urlRaw =
+                  item.link;
+
+
+                const canonical =
+
+                  canonicalUrl(
+                    urlRaw
+                  );
+
+
+                const published =
+
+                  item.isoDate ||
+
+                  item.pubDate ||
+
+                  new Date()
+                    .toISOString();
+
+
+                const category =
+
+                  categoryFor(
+                    url,
+                    item.title
+                  );
+
+
+                return {
+
+                  title:
+
+                    (
+                      item.title ||
+                      ''
+                    )
+
+                      .trim()
+
+                      .slice(
+                        0,
+                        500
+                      ),
+
+
+                  summary:
+
+                    plain.slice(
+                      0,
+                      600
+                    ),
+
+
+                  content_html:
+
+                    contentHtml.length >=
+                    80
+
+                      ? contentHtml.slice(
+                          0,
+                          50000
+                        )
+
+                      : null,
+
+
+                  url:
+                    urlRaw,
+
+
+                  canonical_url:
+
+                    canonical ||
+                    null,
+
+
+                  content_fingerprint:
+
+                    fingerprintOf({
+
+                      title:
+                        item.title,
+
+                      summary:
+                        plain,
+
+                      source
+
+                    }),
+
+
+                  source_url:
+                    urlRaw,
+
+
+                  source,
+
+
+                  author_name:
+
+                    authorOf(
+                      item
+                    ),
+
+
+                  category,
+
+
+                  event_key:
+
+                    eventKeyOf({
+
+                      title:
+                        item.title,
+
+                      category
+
+                    }),
+
+
+                  editorial_status:
+                    'auto',
+
+
+                  image_url:
+
+                    imageOf(
+                      item
+                    ),
+
+
+                  published_at:
+                    published,
+
+
+                  content_source:
+
+                    contentHtml.length >=
+                    80
+
+                      ? 'rss'
+
+                      : 'snippet',
+
+
+                  content_available:
+
+                    contentHtml.length >=
+                    80,
+
+
+                  status:
+                    'published'
+
+                };
+
+              }
+
+            )
+
+            .filter(
+
+              item =>
+
+                item.title &&
+
+                item.url
+
+            );
+
+
+        rowsSeen +=
+          rows.length;
+
+
+        /*
+         * Save articles
+         */
+
+        if (
+          rows.length
+        ) {
+
+          const {
+            error
+          } =
+
+            await supabase
+
+              .from(
+                'articles'
+              )
+
+              .upsert(
+
+                rows,
+
+                {
+
+                  onConflict:
+                    'url',
+
+                  ignoreDuplicates:
+                    false
+
+                }
+
+              );
+
+
+          if (
+            error
+          ) {
+
+            throw error;
+
+          }
+
+
+          upserted +=
+            rows.length;
+
+        }
+
+      }
+
+      catch (
+        error
       ) {
 
         failed++;
+
+
+        console.error(
+
+          '[SYNC] RSS failed',
+
+          url,
+
+          error.message ||
+          error
+
+        );
+
+
+        try {
+
+          const {
+            data:
+              existing
+          } =
+
+            await supabase
+
+              .from(
+                'news_sources'
+              )
+
+              .select(
+                'failure_count'
+              )
+
+              .eq(
+                'feed_url',
+                url
+              )
+
+              .maybeSingle();
+
+
+          const failureCount =
+
+            Number(
+
+              existing?.failure_count ||
+
+              0
+
+            ) +
+
+            1;
+
+
+          await supabase
+
+            .from(
+              'news_sources'
+            )
+
+            .upsert(
+
+              {
+
+                name:
+
+                  new URL(
+                    url
+                  ).hostname,
+
+
+                feed_url:
+                  url,
+
+
+                active:
+                  true,
+
+
+                status:
+
+                  failureCount >=
+                  3
+
+                    ? 'unhealthy'
+
+                    : 'degraded',
+
+
+                failure_count:
+                  failureCount,
+
+
+                last_failure_at:
+
+                  new Date()
+                    .toISOString(),
+
+
+                last_latency_ms:
+
+                  Date.now() -
+                  sourceStart,
+
+
+                updated_at:
+
+                  new Date()
+                    .toISOString()
+
+              },
+
+              {
+
+                onConflict:
+                  'feed_url'
+
+              }
+
+            );
+
+        }
+
+        catch (
+          sourceError
+        ) {
+
+          console.error(
+
+            '[SYNC] Source status update failed:',
+
+            sourceError.message ||
+            sourceError
+
+          );
+
+        }
 
       }
 
@@ -2463,7 +1226,7 @@ export async function syncFeeds() {
 
 
     /*
-     * Intelligence optional.
+     * Optional rebuild RPCs
      */
 
     await safeRpc(
@@ -2472,109 +1235,196 @@ export async function syncFeeds() {
 
 
     await safeRpc(
-      'rebuild_trending'
-    );
-
-
-    await safeRpc(
       'rebuild_live_events'
     );
 
 
-    const finishedAt =
-      new Date()
-        .toISOString();
+    /*
+     * Finish sync run
+     */
+
+    if (
+      runId
+    ) {
+
+      await supabase
+
+        .from(
+          'sync_runs'
+        )
+
+        .update({
+
+          finished_at:
+
+            new Date()
+              .toISOString(),
+
+
+          status:
+
+            failed === 0
+
+              ? 'success'
+
+              : (
+
+                  failed <
+                  feeds.length
+
+                    ? 'partial'
+
+                    : 'failed'
+
+                ),
+
+
+          feeds_failed:
+            failed,
+
+
+          rows_seen:
+            rowsSeen,
+
+
+          rows_upserted:
+            upserted
+
+        })
+
+        .eq(
+          'id',
+          runId
+        );
+
+    }
 
 
     return {
 
       ok:
-
-        failed <
-        totalFeeds,
+        true,
 
 
-      status:
-
-        failed === 0
-
-          ? 'success'
-
-          : failed <
-            totalFeeds
-
-            ? 'partial'
-
-            : 'failed',
+      feeds:
+        feeds.length,
 
 
-      articles:
-
-        {
-
-          feeds:
-            articleFeeds.length,
-
-          found:
-            articleFound,
-
-          saved:
-            articleSaved
-
-        },
+      rowsSeen,
 
 
-      videos:
-
-        {
-
-          feeds:
-            videoFeeds.length,
-
-          found:
-            videoFound,
-
-          saved:
-            videoSaved
-
-        },
+      upserted,
 
 
       failed,
 
 
-      results,
+      at:
 
-
-      startedAt,
-
-
-      finishedAt
+        new Date()
+          .toISOString()
 
     };
 
   }
 
-  finally {
+  catch (
+    error
+  ) {
+
+    /*
+     * Mark failed run
+     */
 
     if (
-      lockResult.ok
+      runId
     ) {
 
-      await safeRpc(
+      try {
 
-        'release_sync_lock',
+        await supabase
 
-        {
+          .from(
+            'sync_runs'
+          )
 
-          p_name:
-            'news-sync'
+          .update({
 
-        }
+            finished_at:
 
-      );
+              new Date()
+                .toISOString(),
+
+
+            status:
+              'failed',
+
+
+            feeds_failed:
+              failed,
+
+
+            rows_seen:
+              rowsSeen,
+
+
+            rows_upserted:
+              upserted,
+
+
+            error_message:
+
+              error.message ||
+
+              String(
+                error
+              )
+
+          })
+
+          .eq(
+            'id',
+            runId
+          );
+
+      }
+
+      catch (
+        updateError
+      ) {
+
+        console.error(
+
+          '[SYNC] Update sync run failed:',
+
+          updateError.message ||
+          updateError
+
+        );
+
+      }
 
     }
+
+
+    throw error;
+
+  }
+
+  finally {
+
+    await safeRpc(
+
+      'release_sync_lock',
+
+      {
+
+        p_name:
+          'news-sync'
+
+      }
+
+    );
 
   }
 
@@ -2596,23 +1446,7 @@ if (
 
   try {
 
-    const result =
-      await syncFeeds();
-
-
-    console.log(
-
-      JSON.stringify(
-
-        result,
-
-        null,
-
-        2
-
-      )
-
-    );
+    await syncFeeds();
 
   }
 
