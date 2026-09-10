@@ -1,887 +1,2044 @@
 import 'dotenv/config';
+
 import crypto from 'node:crypto';
+
 import Parser from 'rss-parser';
+
 import { supabase } from './supabase.js';
 
-const parser = new Parser({
-  timeout: Number(process.env.RSS_TIMEOUT_MS || 6500),
-  headers: {
-    'User-Agent': 'BeritaMudaIndonesia/5.2 (+news aggregator)'
-  }
-});
 
-const splitFeeds = (value) =>
-  String(value || '')
+/* =========================================================
+   CONFIG
+========================================================= */
+
+const RSS_TIMEOUT =
+  Number(
+    process.env.RSS_TIMEOUT
+  ) || 12000;
+
+
+const RSS_RETRIES =
+  Number(
+    process.env.RSS_RETRIES
+  ) || 2;
+
+
+const MAX_ITEMS_PER_FEED =
+  Number(
+    process.env.MAX_ITEMS_PER_FEED
+  ) || 40;
+
+
+const SYNC_LOCK_TTL =
+  Number(
+    process.env.SYNC_LOCK_TTL
+  ) || 240;
+
+
+/* =========================================================
+   RSS PARSER
+========================================================= */
+
+const parser =
+  new Parser({
+
+    timeout:
+      RSS_TIMEOUT,
+
+    headers: {
+
+      'User-Agent':
+        'BeritaMudaIndonesia/6.0 (+news aggregator)'
+
+    },
+
+    customFields: {
+
+      item: [
+
+        [
+          'content:encoded',
+          'contentEncoded'
+        ],
+
+        [
+          'media:content',
+          'mediaContent'
+        ],
+
+        [
+          'media:thumbnail',
+          'mediaThumbnail'
+        ]
+
+      ]
+
+    }
+
+  });
+
+
+/* =========================================================
+   RSS FEEDS
+========================================================= */
+
+const feeds =
+  (
+    process.env.RSS_FEEDS ||
+    ''
+  )
     .split(',')
-    .map((item) => item.trim())
+
+    .map(
+      value =>
+        value.trim()
+    )
+
     .filter(Boolean);
 
-const articleFeeds = splitFeeds(process.env.RSS_FEEDS);
-const videoFeeds = splitFeeds(process.env.VIDEO_RSS_FEEDS);
 
-const feedEntries = [
-  ...articleFeeds.map((url) => ({
-    url,
-    type: 'article'
-  })),
-  ...videoFeeds.map((url) => ({
-    url,
-    type: 'video'
-  }))
-];
+/* =========================================================
+   HELPERS
+========================================================= */
 
-const FEED_CONCURRENCY = Math.max(
-  1,
-  Math.min(6, Number(process.env.RSS_CONCURRENCY || 4))
-);
+function sleep(ms) {
 
-const MAX_ITEMS_PER_FEED = Math.max(
-  1,
-  Math.min(60, Number(process.env.RSS_MAX_ITEMS || 30))
-);
+  return new Promise(
+    resolve =>
+      setTimeout(
+        resolve,
+        ms
+      )
+  );
 
-const MAX_RUNTIME_MS = Math.max(
-  10000,
-  Math.min(
-    55000,
-    Number(process.env.RSS_MAX_RUNTIME_MS || 45000)
-  )
-);
+}
 
-const RETRIES = Math.max(
-  0,
-  Math.min(2, Number(process.env.RSS_RETRIES || 1))
-);
 
-const sleep = (ms) =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+function stripHtml(
+  value = ''
+) {
 
-const stripHtml = (value = '') =>
-  String(value)
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
+  return String(value)
+
+    .replace(
+      /<script[\s\S]*?<\/script>/gi,
+      ' '
+    )
+
+    .replace(
+      /<style[\s\S]*?<\/style>/gi,
+      ' '
+    )
+
+    .replace(
+      /<[^>]+>/g,
+      ' '
+    )
+
+    .replace(
+      /\s+/g,
+      ' '
+    )
+
     .trim();
 
-const safeHtmlFromFeed = (value = '') =>
-  String(value)
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
+}
+
+
+function safeHtmlFromFeed(
+  value = ''
+) {
+
+  return String(value)
+
+    .replace(
+      /<script[\s\S]*?<\/script>/gi,
+      ''
+    )
+
+    .replace(
+      /<style[\s\S]*?<\/style>/gi,
+      ''
+    )
+
     .replace(
       /\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi,
       ''
     )
-    .replace(/javascript:/gi, '')
+
+    .replace(
+      /javascript:/gi,
+      ''
+    )
+
     .trim();
 
-const canonicalUrl = (raw = '') => {
+}
+
+
+function canonicalUrl(
+  value = ''
+) {
+
   try {
-    const url = new URL(raw);
 
-    url.hash = '';
+    const url =
+      new URL(value);
 
-    const trackingParams = [
+
+    url.hash =
+      '';
+
+
+    const removeParams = [
+
       'utm_source',
       'utm_medium',
       'utm_campaign',
       'utm_term',
       'utm_content',
+
       'fbclid',
+
       'gclid'
+
     ];
 
-    trackingParams.forEach((key) => {
-      url.searchParams.delete(key);
-    });
 
-    for (const key of [...url.searchParams.keys()]) {
-      if (key.toLowerCase().startsWith('utm_')) {
-        url.searchParams.delete(key);
+    for (
+      const key
+      of removeParams
+    ) {
+
+      url.searchParams.delete(
+        key
+      );
+
+    }
+
+
+    for (
+      const key
+      of [
+        ...url.searchParams.keys()
+      ]
+    ) {
+
+      if (
+        key
+          .toLowerCase()
+          .startsWith(
+            'utm_'
+          )
+      ) {
+
+        url.searchParams.delete(
+          key
+        );
+
       }
+
     }
 
-    url.hostname = url.hostname.toLowerCase();
 
-    if (url.pathname !== '/') {
-      url.pathname = url.pathname.replace(/\/+$/, '');
+    url.hostname =
+      url.hostname
+        .toLowerCase();
+
+
+    if (
+      url.pathname !== '/'
+    ) {
+
+      url.pathname =
+        url.pathname.replace(
+          /\/+$/,
+          ''
+        );
+
     }
+
 
     return url.toString();
-  } catch {
-    return String(raw || '').trim();
-  }
-};
 
-const normalizeTitle = (value = '') =>
-  stripHtml(value)
+  }
+
+  catch {
+
+    return String(
+      value ||
+      ''
+    ).trim();
+
+  }
+
+}
+
+
+function normalizeTitle(
+  value = ''
+) {
+
+  return stripHtml(
+    value
+  )
+
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .replace(/\s+/g, ' ')
+
+    .replace(
+      /[^\p{L}\p{N}\s]/gu,
+      ' '
+    )
+
+    .replace(
+      /\s+/g,
+      ' '
+    )
+
     .trim();
 
-const fingerprintOf = ({ title, summary, source }) =>
-  crypto
-    .createHash('sha256')
-    .update(
-      `${normalizeTitle(title)}|${stripHtml(summary).slice(
+}
+
+
+function fingerprintOf({
+  title,
+  summary,
+  source
+}) {
+
+  const text =
+    [
+
+      normalizeTitle(
+        title
+      ),
+
+      stripHtml(
+        summary
+      ).slice(
         0,
         500
-      )}|${String(source || '').toLowerCase()}`
-    )
-    .digest('hex');
+      ),
 
-const eventKeyOf = ({ title, category }) =>
-  crypto
-    .createHash('sha256')
+      String(
+        source ||
+        ''
+      ).toLowerCase()
+
+    ].join(
+      '|'
+    );
+
+
+  return crypto
+
+    .createHash(
+      'sha256'
+    )
+
     .update(
-      `${normalizeTitle(title)
-        .split(' ')
-        .slice(0, 14)
-        .join(' ')}|${category || ''}`
+      text
     )
-    .digest('hex')
-    .slice(0, 32);
 
-const categoryFor = (url, title = '') => {
-  const text = `${url || ''} ${title || ''}`.toLowerCase();
+    .digest(
+      'hex'
+    );
+
+}
+
+
+function eventKeyOf({
+  title,
+  category
+}) {
+
+  const normalized =
+    normalizeTitle(
+      title
+    )
+
+      .split(
+        ' '
+      )
+
+      .slice(
+        0,
+        14
+      )
+
+      .join(
+        ' '
+      );
+
+
+  return crypto
+
+    .createHash(
+      'sha256'
+    )
+
+    .update(
+      `${normalized}|${category || ''}`
+    )
+
+    .digest(
+      'hex'
+    )
+
+    .slice(
+      0,
+      32
+    );
+
+}
+
+
+/* =========================================================
+   CATEGORY
+========================================================= */
+
+function categoryFor(
+  feedUrl = '',
+  title = ''
+) {
+
+  const text =
+    `${feedUrl} ${title}`
+      .toLowerCase();
+
 
   const categories = {
-    politik: 'POLITIK',
-    hukum: 'HUKUM',
-    ekonomi: 'EKONOMI',
-    teknologi: 'TEKNOLOGI',
-    olahraga: 'OLAHRAGA',
-    sport: 'OLAHRAGA',
-    dunia: 'INTERNASIONAL',
-    internasional: 'INTERNASIONAL',
-    hiburan: 'HIBURAN',
-    entertainment: 'HIBURAN',
-    lifestyle: 'LIFESTYLE',
-    gaya: 'LIFESTYLE'
+
+    politik:
+      'POLITIK',
+
+    pemerintahan:
+      'POLITIK',
+
+    hukum:
+      'HUKUM',
+
+    kriminal:
+      'HUKUM',
+
+    ekonomi:
+      'EKONOMI',
+
+    bisnis:
+      'EKONOMI',
+
+    finansial:
+      'EKONOMI',
+
+    teknologi:
+      'TEKNOLOGI',
+
+    digital:
+      'TEKNOLOGI',
+
+    olahraga:
+      'OLAHRAGA',
+
+    sport:
+      'OLAHRAGA',
+
+    sepakbola:
+      'OLAHRAGA',
+
+    internasional:
+      'INTERNASIONAL',
+
+    dunia:
+      'INTERNASIONAL',
+
+    hiburan:
+      'HIBURAN',
+
+    entertainment:
+      'HIBURAN',
+
+    lifestyle:
+      'LIFESTYLE',
+
+    gaya:
+      'LIFESTYLE',
+
+    kesehatan:
+      'KESEHATAN',
+
+    kesehatan:
+      'KESEHATAN',
+
+    pendidikan:
+      'PENDIDIKAN',
+
+    pendidikan:
+      'PENDIDIKAN'
+
   };
 
-  for (const [keyword, category] of Object.entries(categories)) {
-    if (text.includes(keyword)) {
+
+  for (
+    const [
+      keyword,
+      category
+    ]
+    of Object.entries(
+      categories
+    )
+  ) {
+
+    if (
+      text.includes(
+        keyword
+      )
+    ) {
+
       return category;
+
     }
+
   }
+
 
   return 'NASIONAL';
-};
 
-const authorOf = (item) =>
-  String(
-    item.creator ||
-      item.author ||
-      item['dc:creator'] ||
-      item['dc:Creator'] ||
-      ''
+}
+
+
+/* =========================================================
+   AUTHOR
+========================================================= */
+
+function authorOf(
+  item
+) {
+
+  return String(
+
+    item?.creator ||
+
+    item?.author ||
+
+    item?.['dc:creator'] ||
+
+    item?.['dc:Creator'] ||
+
+    ''
+
   )
+
     .trim()
-    .slice(0, 160) || null;
 
-const imageOf = (item) => {
-  const mediaContent = item['media:content'];
-  const mediaThumbnail = item['media:thumbnail'];
-
-  const enclosureType = String(
-    item.enclosure?.type || ''
-  ).toLowerCase();
-
-  const enclosureImage = enclosureType.startsWith('image/')
-    ? item.enclosure?.url
-    : null;
-
-  const thumbnail = Array.isArray(mediaThumbnail)
-    ? mediaThumbnail[0]?.url
-    : mediaThumbnail?.url;
-
-  const mediaImage = Array.isArray(mediaContent)
-    ? mediaContent[0]?.url
-    : mediaContent?.url;
-
-  return (
-    thumbnail ||
-    item.itunes?.image ||
-    item.image ||
-    enclosureImage ||
-    mediaImage ||
-    null
-  );
-};
-
-const videoUrlOf = (item) => {
-  const enclosureUrl = item.enclosure?.url;
-
-  const enclosureType = String(
-    item.enclosure?.type || ''
-  ).toLowerCase();
-
-  const mediaContent = item['media:content'];
-
-  const mediaUrl = Array.isArray(mediaContent)
-    ? mediaContent[0]?.url
-    : mediaContent?.url;
-
-  if (
-    enclosureUrl &&
-    enclosureType.startsWith('video/')
-  ) {
-    return enclosureUrl;
-  }
-
-  if (mediaUrl) {
-    return mediaUrl;
-  }
-
-  return item.link || enclosureUrl || null;
-};
-
-const looksLikeVideo = (item) => {
-  const url = String(videoUrlOf(item) || '').toLowerCase();
-
-  const enclosureType = String(
-    item.enclosure?.type || ''
-  ).toLowerCase();
-
-  return (
-    enclosureType.startsWith('video/') ||
-    /youtube\.com|youtu\.be|vimeo\.com|dailymotion\.com|\.mp4(?:\?|$)|\.webm(?:\?|$)|\.m3u8(?:\?|$)/.test(
-      url
+    .slice(
+      0,
+      160
     )
-  );
-};
 
-async function fetchFeed(url) {
-  let lastError;
+    || null;
 
-  for (let attempt = 0; attempt <= RETRIES; attempt += 1) {
-    const startedAt = Date.now();
+}
 
-    try {
-      const feed = await parser.parseURL(url);
+
+/* =========================================================
+   IMAGE
+========================================================= */
+
+function imageOf(
+  item = {}
+) {
+
+  const candidates = [
+
+    item?.enclosure?.url,
+
+    item?.['media:content']?.url,
+
+    item?.mediaContent?.url,
+
+    item?.['media:thumbnail']?.url,
+
+    item?.mediaThumbnail?.url,
+
+    item?.itunes?.image,
+
+    item?.image,
+
+    item?.image_url
+
+  ];
+
+
+  for (
+    const image
+    of candidates
+  ) {
+
+    if (
+      typeof image ===
+      'string'
+    ) {
+
+      const value =
+        image.trim();
+
+
+      if (
+        /^https?:\/\//i.test(
+          value
+        )
+      ) {
+
+        return value;
+
+      }
+
+    }
+
+
+    if (
+      image &&
+      typeof image ===
+      'object' &&
+      image.url
+    ) {
+
+      return image.url;
+
+    }
+
+  }
+
+
+  return null;
+
+}
+
+
+/* =========================================================
+   SAFE RPC
+
+   PENTING:
+   Jangan gunakan:
+
+   supabase.rpc(...).catch(...)
+
+   Karena hasil rpc pada kasus project Anda
+   menyebabkan error:
+
+   ".catch is not a function"
+========================================================= */
+
+async function safeRpc(
+  name,
+  params = {}
+) {
+
+  try {
+
+    const result =
+      await supabase.rpc(
+        name,
+        params
+      );
+
+
+    if (
+      result?.error
+    ) {
+
+      console.warn(
+        `[SYNC] RPC ${name} error:`,
+        result.error.message
+      );
+
 
       return {
-        feed,
-        latency: Date.now() - startedAt
-      };
-    } catch (error) {
-      lastError = error;
 
-      if (attempt < RETRIES) {
-        await sleep(350 * (attempt + 1));
-      }
+        ok:
+          false,
+
+        error:
+          result.error
+
+      };
+
     }
+
+
+    return {
+
+      ok:
+        true,
+
+      data:
+        result?.data
+
+    };
+
   }
+
+  catch (
+    error
+  ) {
+
+    console.warn(
+      `[SYNC] RPC ${name} failed:`,
+      error?.message ||
+      error
+    );
+
+
+    return {
+
+      ok:
+        false,
+
+      error
+
+    };
+
+  }
+
+}
+
+
+/* =========================================================
+   SAFE QUERY
+
+   Untuk query tambahan yang tidak boleh
+   menghentikan seluruh sync.
+========================================================= */
+
+async function safeQuery(
+  callback,
+  label = 'query'
+) {
+
+  try {
+
+    return await callback();
+
+  }
+
+  catch (
+    error
+  ) {
+
+    console.warn(
+      `[SYNC] ${label} failed:`,
+      error?.message ||
+      error
+    );
+
+
+    return {
+
+      data:
+        null,
+
+      error
+
+    };
+
+  }
+
+}
+
+
+/* =========================================================
+   FETCH RSS
+========================================================= */
+
+async function fetchFeed(
+  url
+) {
+
+  let lastError =
+    null;
+
+
+  for (
+    let attempt = 0;
+    attempt <= RSS_RETRIES;
+    attempt++
+  ) {
+
+    const started =
+      Date.now();
+
+
+    try {
+
+      const feed =
+        await parser.parseURL(
+          url
+        );
+
+
+      return {
+
+        feed,
+
+        latency:
+          Date.now() -
+          started
+
+      };
+
+    }
+
+    catch (
+      error
+    ) {
+
+      lastError =
+        error;
+
+
+      const isLastAttempt =
+        attempt >=
+        RSS_RETRIES;
+
+
+      if (
+        !isLastAttempt
+      ) {
+
+        await sleep(
+
+          700 *
+          (
+            attempt +
+            1
+          )
+
+        );
+
+      }
+
+    }
+
+  }
+
 
   throw lastError;
+
 }
 
-async function mapWithConcurrency(items, limit, worker) {
-  const results = [];
 
-  let nextIndex = 0;
+/* =========================================================
+   CREATE ARTICLE ROW
+========================================================= */
 
-  const workers = Array.from(
-    {
-      length: Math.min(limit, items.length)
-    },
-    async () => {
-      while (true) {
-        const index = nextIndex;
-        nextIndex += 1;
+function createArticleRow({
+  item,
+  feedUrl,
+  source
+}) {
 
-        if (index >= items.length) {
-          return;
-        }
-
-        results[index] = await worker(items[index], index);
-      }
-    }
-  );
-
-  await Promise.all(workers);
-
-  return results;
-}
-
-function articleRowFromItem(item, feedUrl, source) {
   const rawHtml =
-    item['content:encoded'] ||
-    item.content ||
+    item?.contentEncoded ||
+
+    item?.['content:encoded'] ||
+
+    item?.content ||
+
+    item?.contentSnippet ||
+
+    item?.summary ||
+
+    item?.description ||
+
     '';
 
-  const plain = stripHtml(
-    item.contentSnippet ||
-      rawHtml ||
-      item.summary ||
-      item.description ||
+
+  const plain =
+    stripHtml(
+      rawHtml
+    );
+
+
+  const contentHtml =
+    safeHtmlFromFeed(
+      item?.contentEncoded ||
+
+      item?.['content:encoded'] ||
+
+      item?.content ||
+
       ''
-  );
+    );
 
-  const contentHtml = safeHtmlFromFeed(rawHtml);
 
-  const url = canonicalUrl(
-    item.link ||
-      item.guid ||
+  const url =
+    String(
+      item?.link ||
+      item?.guid ||
       ''
-  );
+    ).trim();
 
-  const title = String(item.title || '')
-    .trim()
-    .slice(0, 500);
 
-  const category = categoryFor(feedUrl, title);
+  const title =
+    String(
+      item?.title ||
+      ''
+    )
 
-  if (!title || !url) {
+      .trim()
+
+      .slice(
+        0,
+        500
+      );
+
+
+  if (
+    !title ||
+    !url
+  ) {
+
     return null;
+
   }
 
+
+  const category =
+    categoryFor(
+      feedUrl,
+      title
+    );
+
+
+  const publishedAt =
+    item?.isoDate ||
+
+    item?.pubDate ||
+
+    item?.published ||
+
+    new Date()
+      .toISOString();
+
+
+  const summary =
+    plain.slice(
+      0,
+      600
+    );
+
+
   return {
+
     title,
 
-    summary: plain.slice(0, 600),
+    summary,
 
     content_html:
-      contentHtml.length >= 80
-        ? contentHtml.slice(0, 50000)
+
+      contentHtml.length >=
+      80
+
+        ? contentHtml.slice(
+            0,
+            50000
+          )
+
         : null,
+
+
+    content:
+
+      plain.length >=
+      80
+
+        ? plain.slice(
+            0,
+            50000
+          )
+
+        : null,
+
 
     url,
 
-    canonical_url: url,
 
-    content_fingerprint: fingerprintOf({
-      title,
-      summary: plain,
-      source
-    }),
+    canonical_url:
+      canonicalUrl(
+        url
+      ) || null,
 
-    source_url: url,
+
+    source_url:
+      url,
+
 
     source,
 
-    author_name: authorOf(item),
+
+    author_name:
+      authorOf(
+        item
+      ),
+
 
     category,
 
-    event_key: eventKeyOf({
-      title,
-      category
-    }),
 
-    editorial_status: 'auto',
+    image_url:
+      imageOf(
+        item
+      ),
 
-    image_url: imageOf(item),
 
     published_at:
-      item.isoDate ||
-      item.pubDate ||
-      new Date().toISOString(),
+      publishedAt,
+
+
+    status:
+      'published',
+
 
     content_source:
-      contentHtml.length >= 80
+
+      contentHtml.length >=
+      80
+
         ? 'rss'
+
         : 'snippet',
 
+
     content_available:
-      contentHtml.length >= 80,
 
-    status: 'published'
+      plain.length >=
+      80,
+
+
+    editorial_status:
+      'auto',
+
+
+    content_fingerprint:
+
+      fingerprintOf({
+
+        title,
+
+        summary,
+
+        source
+
+      }),
+
+
+    event_key:
+
+      eventKeyOf({
+
+        title,
+
+        category
+
+      })
+
   };
+
 }
 
-function videoRowFromItem(item, feedUrl, source) {
-  const videoUrl = canonicalUrl(
-    videoUrlOf(item) ||
-      ''
-  );
 
-  const title = String(item.title || '')
-    .trim()
-    .slice(0, 500);
+/* =========================================================
+   UPDATE SOURCE SUCCESS
+========================================================= */
 
-  if (!title || !videoUrl) {
-    return null;
-  }
+async function markSourceSuccess({
+  source,
+  feedUrl,
+  latency
+}) {
 
-  const description = stripHtml(
-    item.contentSnippet ||
-      item.summary ||
-      item.description ||
-      item.content ||
-      ''
-  ).slice(0, 5000);
+  await safeQuery(
 
-  return {
-    title,
+    () =>
 
-    description:
-      description || null,
+      supabase
 
-    video_url: videoUrl,
+        .from(
+          'news_sources'
+        )
 
-    thumbnail_url: imageOf(item),
+        .upsert(
 
-    source,
+          {
 
-    category: categoryFor(
-      feedUrl,
-      title
-    ),
+            name:
+              source,
 
-    status: 'published'
-  };
-}
+            feed_url:
+              feedUrl,
 
-async function saveArticles(rows) {
-  if (!rows.length) {
-    return 0;
-  }
+            active:
+              true,
 
-  const uniqueRows = [
-    ...new Map(
-      rows.map((row) => [
-        row.url,
-        row
-      ])
-    ).values()
-  ];
+            status:
+              'healthy',
 
-  const { error } = await supabase
-    .from('articles')
-    .upsert(uniqueRows, {
-      onConflict: 'url',
-      ignoreDuplicates: false
-    });
+            success_count:
+              1,
 
-  if (error) {
-    throw error;
-  }
-
-  return uniqueRows.length;
-}
-
-async function saveVideos(rows) {
-  if (!rows.length) {
-    return {
-      inserted: 0,
-      existing: 0
-    };
-  }
-
-  const uniqueRows = [
-    ...new Map(
-      rows.map((row) => [
-        row.video_url,
-        row
-      ])
-    ).values()
-  ];
-
-  const urls = uniqueRows.map(
-    (row) => row.video_url
-  );
-
-  const existingUrls = new Set();
-
-  for (
-    let start = 0;
-    start < urls.length;
-    start += 100
-  ) {
-    const chunk = urls.slice(
-      start,
-      start + 100
-    );
-
-    const { data, error } = await supabase
-      .from('videos')
-      .select('video_url')
-      .in('video_url', chunk);
-
-    if (error) {
-      throw error;
-    }
-
-    for (const row of data || []) {
-      if (row.video_url) {
-        existingUrls.add(
-          row.video_url
-        );
-      }
-    }
-  }
-
-  const rowsToInsert = uniqueRows.filter(
-    (row) =>
-      !existingUrls.has(
-        row.video_url
-      )
-  );
-
-  if (rowsToInsert.length) {
-    const { error } = await supabase
-      .from('videos')
-      .insert(rowsToInsert);
-
-    if (error) {
-      throw error;
-    }
-  }
-
-  return {
-    inserted: rowsToInsert.length,
-
-    existing:
-      uniqueRows.length -
-      rowsToInsert.length
-  };
-}
-
-export async function syncFeeds() {
-  const startedAt = Date.now();
-
-  const deadline =
-    startedAt +
-    MAX_RUNTIME_MS;
-
-  if (!feedEntries.length) {
-    return {
-      ok: false,
-
-      reason:
-        'RSS_FEEDS_empty',
-
-      feeds: 0,
-
-      articles: 0,
-
-      videos: 0,
-
-      failed: 0,
-
-      at:
-        new Date().toISOString()
-    };
-  }
-
-  const entries = [];
-
-  const seen = new Set();
-
-  for (const entry of feedEntries) {
-    const key =
-      `${entry.type}:${entry.url}`;
-
-    if (!seen.has(key)) {
-      seen.add(key);
-
-      entries.push(entry);
-    }
-  }
-
-  const limitedEntries = entries.slice(
-    0,
-    Number(
-      process.env.RSS_MAX_FEEDS ||
-        30
-    )
-  );
-
-  const results =
-    await mapWithConcurrency(
-      limitedEntries,
-      FEED_CONCURRENCY,
-
-      async (entry) => {
-        if (Date.now() >= deadline) {
-          return {
-            skipped: true,
-
-            url: entry.url,
-
-            type: entry.type,
-
-            reason:
-              'runtime_limit'
-          };
-        }
-
-        try {
-          const {
-            feed,
-            latency
-          } =
-            await fetchFeed(
-              entry.url
-            );
-
-          let source =
-            String(
-              feed.title || ''
-            ).trim();
-
-          if (!source) {
-            try {
-              source =
-                new URL(
-                  entry.url
-                ).hostname;
-            } catch {
-              source =
-                'RSS Feed';
-            }
-          }
-
-          source =
-            source.slice(
+            failure_count:
               0,
-              120
-            );
 
-          const articles = [];
-          const videos = [];
+            last_success_at:
 
-          const items =
-            (feed.items || [])
-              .slice(
-                0,
-                MAX_ITEMS_PER_FEED
-              );
+              new Date()
+                .toISOString(),
 
-          for (const item of items) {
-            const isVideo =
-              entry.type ===
-                'video' ||
-              looksLikeVideo(
-                item
-              );
 
-            if (isVideo) {
-              const video =
-                videoRowFromItem(
-                  item,
-                  entry.url,
-                  source
-                );
+            last_latency_ms:
+              latency,
 
-              if (video) {
-                videos.push(video);
-              }
-            } else {
-              const article =
-                articleRowFromItem(
-                  item,
-                  entry.url,
-                  source
-                );
 
-              if (article) {
-                articles.push(article);
-              }
-            }
+            updated_at:
+
+              new Date()
+                .toISOString()
+
+          },
+
+          {
+
+            onConflict:
+              'feed_url'
+
           }
 
-          return {
-            ok: true,
+        ),
 
-            url:
-              entry.url,
+    'mark source success'
 
-            type:
-              entry.type,
+  );
 
-            source,
+}
 
-            latency,
 
-            articles,
+/* =========================================================
+   UPDATE SOURCE FAILURE
+========================================================= */
 
-            videos
-          };
-        } catch (error) {
-          console.error(
-            '[SYNC] RSS failed:',
-            entry.url,
-            error?.message || error
-          );
+async function markSourceFailure(
+  feedUrl,
+  latency
+) {
 
-          return {
-            ok: false,
+  let failureCount =
+    1;
 
-            url:
-              entry.url,
 
-            type:
-              entry.type,
+  try {
 
-            error:
-              error?.message ||
-              String(error)
-          };
-        }
-      }
+    const result =
+      await supabase
+
+        .from(
+          'news_sources'
+        )
+
+        .select(
+          'failure_count'
+        )
+
+        .eq(
+          'feed_url',
+          feedUrl
+        )
+
+        .maybeSingle();
+
+
+    if (
+      !result?.error
+    ) {
+
+      failureCount =
+        Number(
+          result?.data
+            ?.failure_count ||
+          0
+        ) + 1;
+
+    }
+
+  }
+
+  catch (
+    error
+  ) {
+
+    console.warn(
+      '[SYNC] Cannot read source failure count:',
+      error?.message
     );
 
-  const articleRows =
-    results.flatMap(
-      (result) =>
-        result.articles || []
-    );
+  }
 
-  const videoRows =
-    results.flatMap(
-      (result) =>
-        result.videos || []
-    );
 
-  const failedFeeds =
-    results.filter(
-      (result) =>
-        result &&
-        result.ok === false
-    );
+  let sourceName =
+    feedUrl;
 
-  const skippedFeeds =
-    results.filter(
-      (result) =>
-        result?.skipped
-    );
 
-  const articlesUpserted =
-    await saveArticles(
-      articleRows
-    );
+  try {
 
-  const videoResult =
-    await saveVideos(
-      videoRows
-    );
+    sourceName =
+      new URL(
+        feedUrl
+      ).hostname;
 
-  /*
-   * Optional database intelligence rebuild.
-   *
-   * IMPORTANT:
-   * Do not use:
-   *
-   * supabase.rpc(...).catch(...)
-   *
-   * because Supabase query builders may not expose
-   * .catch() directly.
-   */
+  }
 
-  const remainingMs =
-    deadline -
+  catch {
+
+    /* tetap gunakan feedUrl */
+
+  }
+
+
+  await safeQuery(
+
+    () =>
+
+      supabase
+
+        .from(
+          'news_sources'
+        )
+
+        .upsert(
+
+          {
+
+            name:
+              sourceName,
+
+            feed_url:
+              feedUrl,
+
+            active:
+              true,
+
+
+            status:
+
+              failureCount >=
+              3
+
+                ? 'unhealthy'
+
+                : 'degraded',
+
+
+            failure_count:
+              failureCount,
+
+
+            last_failure_at:
+
+              new Date()
+                .toISOString(),
+
+
+            last_latency_ms:
+              latency,
+
+
+            updated_at:
+
+              new Date()
+                .toISOString()
+
+          },
+
+          {
+
+            onConflict:
+              'feed_url'
+
+          }
+
+        ),
+
+    'mark source failure'
+
+  );
+
+}
+
+
+/* =========================================================
+   UPDATE SYNC RUN
+========================================================= */
+
+async function updateSyncRun(
+  runId,
+  payload
+) {
+
+  if (
+    !runId
+  ) {
+
+    return;
+
+  }
+
+
+  await safeQuery(
+
+    () =>
+
+      supabase
+
+        .from(
+          'sync_runs'
+        )
+
+        .update(
+          payload
+        )
+
+        .eq(
+          'id',
+          runId
+        ),
+
+    'update sync run'
+
+  );
+
+}
+
+
+/* =========================================================
+   SYNC ONE FEED
+========================================================= */
+
+async function syncOneFeed(
+  feedUrl
+) {
+
+  const started =
     Date.now();
 
-  if (remainingMs > 5000) {
-    try {
-      const { error } =
-        await supabase.rpc(
-          'rebuild_article_intelligence'
+
+  try {
+
+    const {
+
+      feed,
+
+      latency
+
+    } =
+      await fetchFeed(
+        feedUrl
+      );
+
+
+    const source =
+      String(
+
+        feed?.title ||
+
+        new URL(
+          feedUrl
+        ).hostname ||
+
+        'RSS'
+
+      )
+
+        .trim()
+
+        .slice(
+          0,
+          120
         );
 
-      if (error) {
-        console.error(
-          '[SYNC] rebuild_article_intelligence:',
-          error.message
+
+    await markSourceSuccess({
+
+      source,
+
+      feedUrl,
+
+      latency
+
+    });
+
+
+    const rows =
+      (
+        feed?.items ||
+        []
+      )
+
+        .slice(
+          0,
+          MAX_ITEMS_PER_FEED
+        )
+
+        .map(
+
+          item =>
+
+            createArticleRow({
+
+              item,
+
+              feedUrl,
+
+              source
+
+            })
+
+        )
+
+        .filter(
+          Boolean
         );
-      }
-    } catch (error) {
-      console.error(
-        '[SYNC] intelligence rebuild failed:',
-        error?.message || error
-      );
+
+
+    if (
+      !rows.length
+    ) {
+
+      return {
+
+        ok:
+          true,
+
+        feedUrl,
+
+        source,
+
+        rows:
+          0,
+
+        upserted:
+          0,
+
+        latency
+
+      };
+
     }
+
+
+    const {
+
+      error
+
+    } =
+      await supabase
+
+        .from(
+          'articles'
+        )
+
+        .upsert(
+
+          rows,
+
+          {
+
+            onConflict:
+              'url',
+
+            ignoreDuplicates:
+              false
+
+          }
+
+        );
+
+
+    if (
+      error
+    ) {
+
+      throw error;
+
+    }
+
+
+    return {
+
+      ok:
+        true,
+
+      feedUrl,
+
+      source,
+
+      rows:
+        rows.length,
+
+      upserted:
+        rows.length,
+
+      latency
+
+    };
+
   }
 
-  if (remainingMs > 10000) {
-    try {
-      const { error } =
-        await supabase.rpc(
-          'rebuild_live_events'
-        );
+  catch (
+    error
+  ) {
 
-      if (error) {
-        console.error(
-          '[SYNC] rebuild_live_events:',
-          error.message
-        );
-      }
-    } catch (error) {
-      console.error(
-        '[SYNC] live events rebuild failed:',
-        error?.message || error
-      );
-    }
-  }
-
-  return {
-    ok: true,
-
-    feeds:
-      limitedEntries.length,
-
-    processedFeeds:
-      results.filter(
-        (result) =>
-          result?.ok
-      ).length,
-
-    failedFeeds:
-      failedFeeds.length,
-
-    skippedFeeds:
-      skippedFeeds.length,
-
-    articles:
-      articlesUpserted,
-
-    videos:
-      videoResult.inserted,
-
-    existingVideos:
-      videoResult.existing,
-
-    durationMs:
+    const latency =
       Date.now() -
+      started;
+
+
+    console.error(
+
+      '[SYNC] RSS failed:',
+
+      feedUrl,
+
+      error?.message ||
+      error
+
+    );
+
+
+    await markSourceFailure(
+      feedUrl,
+      latency
+    );
+
+
+    return {
+
+      ok:
+        false,
+
+      feedUrl,
+
+      rows:
+        0,
+
+      upserted:
+        0,
+
+      latency,
+
+      error:
+
+        error?.message ||
+
+        String(
+          error
+        )
+
+    };
+
+  }
+
+}
+
+
+/* =========================================================
+   MAIN SYNC
+========================================================= */
+
+export async function syncFeeds() {
+
+  const startedAt =
+    new Date()
+      .toISOString();
+
+
+  /* -------------------------------------------------------
+     VALIDATE FEEDS
+  ------------------------------------------------------- */
+
+  if (
+    !feeds.length
+  ) {
+
+    return {
+
+      ok:
+        true,
+
+      skipped:
+        true,
+
+      reason:
+        'RSS_FEEDS is empty',
+
+      feeds:
+        0,
+
+      rowsSeen:
+        0,
+
+      upserted:
+        0,
+
+      failed:
+        0,
+
       startedAt,
 
-    at:
-      new Date().toISOString(),
+      finishedAt:
 
-    errors:
-      failedFeeds.map(
-        (feed) => ({
-          url:
-            feed.url,
+        new Date()
+          .toISOString()
 
-          error:
-            feed.error
+    };
+
+  }
+
+
+  /* -------------------------------------------------------
+     ACQUIRE LOCK
+  ------------------------------------------------------- */
+
+  const lockResult =
+    await safeRpc(
+
+      'acquire_sync_lock',
+
+      {
+
+        p_name:
+          'news-sync',
+
+        p_ttl_seconds:
+          SYNC_LOCK_TTL
+
+      }
+
+    );
+
+
+  /*
+     Jika fungsi RPC lock belum ada,
+     sync tetap bisa dilanjutkan.
+
+     Ini penting agar error database RPC
+     tidak langsung membuat website mati.
+  */
+
+  const lockAvailable =
+    lockResult.ok;
+
+
+  const lockAcquired =
+    lockResult.ok
+
+      ? Boolean(
+          lockResult.data
+        )
+
+      : true;
+
+
+  if (
+    lockAvailable &&
+    !lockAcquired
+  ) {
+
+    return {
+
+      ok:
+        true,
+
+      skipped:
+        true,
+
+      reason:
+        'sync_locked',
+
+      feeds:
+        feeds.length,
+
+      startedAt,
+
+      finishedAt:
+
+        new Date()
+          .toISOString()
+
+    };
+
+  }
+
+
+  let runId =
+    null;
+
+
+  let rowsSeen =
+    0;
+
+
+  let upserted =
+    0;
+
+
+  let failed =
+    0;
+
+
+  const results =
+    [];
+
+
+  /* -------------------------------------------------------
+     CREATE SYNC RUN
+  ------------------------------------------------------- */
+
+  try {
+
+    const run =
+      await supabase
+
+        .from(
+          'sync_runs'
+        )
+
+        .insert({
+
+          feeds_total:
+            feeds.length,
+
+          status:
+            'running',
+
+          started_at:
+            startedAt
+
         })
-      )
-  };
+
+        .select(
+          'id'
+        )
+
+        .single();
+
+
+    if (
+      !run?.error
+    ) {
+
+      runId =
+        run?.data?.id ||
+        null;
+
+    }
+
+    else {
+
+      console.warn(
+
+        '[SYNC] Cannot create sync run:',
+
+        run.error.message
+
+      );
+
+    }
+
+  }
+
+  catch (
+    error
+  ) {
+
+    console.warn(
+
+      '[SYNC] sync_runs unavailable:',
+
+      error?.message
+
+    );
+
+  }
+
+
+  /* -------------------------------------------------------
+     PROCESS FEEDS
+
+     Dijalankan satu per satu agar lebih aman
+     untuk Vercel dan tidak membanjiri RSS server.
+  ------------------------------------------------------- */
+
+  try {
+
+    for (
+      const feedUrl
+      of feeds
+    ) {
+
+      const result =
+        await syncOneFeed(
+          feedUrl
+        );
+
+
+      results.push(
+        result
+      );
+
+
+      rowsSeen +=
+        result.rows ||
+        0;
+
+
+      upserted +=
+        result.upserted ||
+        0;
+
+
+      if (
+        !result.ok
+      ) {
+
+        failed++;
+
+      }
+
+    }
+
+
+    /* -----------------------------------------------------
+       OPTIONAL INTELLIGENCE
+    ----------------------------------------------------- */
+
+    await safeRpc(
+      'rebuild_article_intelligence'
+    );
+
+
+    await safeRpc(
+      'rebuild_live_events'
+    );
+
+
+    /* -----------------------------------------------------
+       FINAL STATUS
+    ----------------------------------------------------- */
+
+    const status =
+
+      failed === 0
+
+        ? 'success'
+
+        : failed < feeds.length
+
+          ? 'partial'
+
+          : 'failed';
+
+
+    const finishedAt =
+      new Date()
+        .toISOString();
+
+
+    await updateSyncRun(
+
+      runId,
+
+      {
+
+        finished_at:
+          finishedAt,
+
+        status,
+
+        feeds_failed:
+          failed,
+
+        rows_seen:
+          rowsSeen,
+
+        rows_upserted:
+          upserted
+
+      }
+
+    );
+
+
+    return {
+
+      ok:
+        failed <
+        feeds.length,
+
+
+      status,
+
+
+      feeds:
+        feeds.length,
+
+
+      rowsSeen,
+
+
+      upserted,
+
+
+      failed,
+
+
+      results,
+
+
+      startedAt,
+
+
+      finishedAt
+
+    };
+
+  }
+
+  catch (
+    error
+  ) {
+
+    const finishedAt =
+      new Date()
+        .toISOString();
+
+
+    await updateSyncRun(
+
+      runId,
+
+      {
+
+        finished_at:
+          finishedAt,
+
+        status:
+          'failed',
+
+        feeds_failed:
+          failed,
+
+        rows_seen:
+          rowsSeen,
+
+        rows_upserted:
+          upserted,
+
+        error_message:
+
+          error?.message ||
+
+          String(
+            error
+          )
+
+      }
+
+    );
+
+
+    throw error;
+
+  }
+
+  finally {
+
+    /*
+       Jangan pernah lagi menggunakan:
+
+       supabase.rpc(...).catch(...)
+    */
+
+    if (
+      lockAvailable
+    ) {
+
+      await safeRpc(
+
+        'release_sync_lock',
+
+        {
+
+          p_name:
+            'news-sync'
+
+        }
+
+      );
+
+    }
+
+  }
+
 }
+
+
+/* =========================================================
+   DIRECT EXECUTION
+========================================================= */
 
 if (
   import.meta.url ===
   `file://${process.argv[1]}`
 ) {
-  syncFeeds()
-    .then((result) => {
-      console.log(
-        JSON.stringify(
-          result,
-          null,
-          2
-        )
-      );
-    })
-    .catch((error) => {
-      console.error(error);
 
-      process.exitCode = 1;
-    });
+  try {
+
+    const result =
+      await syncFeeds();
+
+
+    console.log(
+
+      '[SYNC RESULT]',
+
+      JSON.stringify(
+
+        result,
+
+        null,
+
+        2
+
+      )
+
+    );
+
+  }
+
+  catch (
+    error
+  ) {
+
+    console.error(
+
+      '[SYNC ERROR]',
+
+      error
+    );
+
+
+    process.exitCode =
+      1;
+
+  }
+
 }
