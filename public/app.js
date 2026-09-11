@@ -383,6 +383,12 @@
     }
   }
 
+
+  async function loadHomepageLive() {
+    if (homepageLive && Date.now() - homepageLiveAt < 30000) return homepageLive;
+    try { homepageLive = await getJson('/api/public/homepage/live'); homepageLiveAt = Date.now(); return homepageLive; } catch { return null; }
+  }
+
   async function loadSystem() {
     try {
       const data = await getJson('/api/system/config');
@@ -395,6 +401,7 @@
   }
 
   async function loadArticles({ append = false, silent = false } = {}) {
+    loadHomepageLive().catch(() => null);
     if (state.loading && !silent) return;
     if (!append) state.offset = 0;
     if (!silent) setLoading(true);
