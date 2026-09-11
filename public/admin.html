@@ -512,12 +512,12 @@
       api('/api/admin/videos')
     ]);
 
-    $('s1').textContent = stats.publishedArticles ?? 0;
-    $('s2').textContent = stats.draftArticles ?? 0;
+    $('s1').textContent = stats.publishedArticles ?? stats.articles ?? 0;
+    $('s2').textContent = stats.draftArticles ?? stats.drafts ?? 0;
     $('s3').textContent = stats.videos ?? 0;
-    $('s4').textContent = stats.views ?? 0;
-    $('s5').textContent = stats.likes ?? 0;
-    $('s6').textContent = stats.shares ?? 0;
+    $('s4').textContent = stats.views ?? stats.totalViews ?? 0;
+    $('s5').textContent = stats.likes ?? stats.totalLikes ?? 0;
+    $('s6').textContent = stats.shares ?? stats.totalShares ?? 0;
 
     $('topContent').innerHTML = (stats.topContent || []).map((item, index) =>
       `<div class="item"><b>${index + 1}. ${esc(item.title)}</b><div class="muted">${esc(item.category)} · ${item.views || 0} views · ${item.likes || 0} likes · ${item.shares || 0} shares</div></div>`
