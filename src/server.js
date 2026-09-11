@@ -5962,6 +5962,68 @@ app.get(
 );
 
 /* =========================================================
+   V7 INTELLIGENCE + OWNER ACTION API
+========================================================= */
+app.get('/api/admin/intelligence/overview', admin, async (request, response) => {
+  try {
+    const days = Math.min(Math.max(Number(request.query.days)||30, 7), 365);
+    const since = new Date(Date.now()-days*86400000).toISOString();
+    const [a,v,r,s,o,t] = await Promise.all([
+      adminClient.from('articles').select('id,title,category,views,likes,shares,published_at,status,featured,breaking,editorial_status,intelligence_score,source_quality_score,freshness_score,engagement_score,content_available').order('created_at',{ascending:false}).limit(500),
+      adminClient.from('videos').select('id,title,category,views,likes,shares,created_at,status').order('created_at',{ascending:false}).limit(300),
+      adminClient.from('revenue_entries').select('source,amount,currency,occurred_at').gte('occurred_at',since).order('occurred_at',{ascending:false}).limit(5000),
+      adminClient.from('system_events').select('severity,component,message,created_at,resolved_at').is('resolved_at',null).order('created_at',{ascending:false}).limit(50),
+      adminClient.from('automation_rules').select('id,name,enabled,updated_at').eq('enabled',true).limit(100),
+      adminClient.from('trending_content').select('content_type,content_id,score,rank').order('rank',{ascending:true}).limit(30)
+    ]);
+    const articles=a.data||[], videos=v.data||[], revenues=r.data||[];
+    const published=articles.filter(x=>x.status==='published');
+    const qualityAvg = published.length ? published.reduce((n,x)=>n+Number(x.intelligence_score||0),0)/published.length : 0;
+    const engagement = published.reduce((n,x)=>n+Number(x.views||0)+Number(x.likes||0)*8+Number(x.shares||0)*12,0);
+    const revBy={}; for(const x of revenues){ const k=`${x.source}:${x.currency}`; revBy[k]=(revBy[k]||0)+Number(x.amount||0); }
+    const topArticles=published.map(x=>({ ...x, momentum: Number(x.views||0)+Number(x.likes||0)*8+Number(x.shares||0)*12 })).sort((x,y)=>y.momentum-x.momentum).slice(0,10);
+    const category={}; for(const x of published){ category[x.category]=(category[x.category]||0)+Number(x.views||0)+Number(x.shares||0)*10; }
+    const topCategories=Object.entries(category).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([name,score])=>({name,score}));
+    const issues=[];
+    if((s.data||[]).length) issues.push({priority:'P0',type:'system',title:'Ada system event terbuka',detail:`${s.data.length} event perlu ditinjau`});
+    const missing=published.filter(x=>!x.content_available).length; if(missing) issues.push({priority:'P1',type:'content',title:'Konten belum lengkap',detail:`${missing} artikel published tidak punya content lengkap`});
+    const stale=published.filter(x=>x.published_at && Date.now()-new Date(x.published_at).getTime()>72*3600000).length; if(stale && published.length<10) issues.push({priority:'P2',type:'editorial',title:'Volume artikel rendah',detail:`${published.length} artikel published di dataset admin`});
+    if(!revenues.length) issues.push({priority:'P2',type:'revenue',title:'Belum ada revenue tercatat',detail:'Tambahkan revenue aktual agar monetization intelligence bekerja'});
+    const totalRevenue=Object.values(revBy).reduce((x,y)=>x+y,0);
+    const runRate=days?totalRevenue/days:0;
+    const recommendations=[];
+    if(topArticles[0]) recommendations.push(`Prioritaskan distribusi: ${topArticles[0].title}`);
+    if(topCategories[0]) recommendations.push(`Naikkan coverage kategori ${topCategories[0].name}`);
+    if(!revenues.length) recommendations.push('Hubungkan sumber revenue dan mulai pencatatan');
+    recommendations.push('Jalankan sync + rebuild intelligence secara berkala');
+    response.json({ok:true,days,score:Math.max(0,Math.min(100,Math.round(55+qualityAvg*0.25+(published.length?10:0)-(s.data||[]).length*8))),metrics:{articles:articles.length,published:published.length,videos:videos.length,views:published.reduce((n,x)=>n+Number(x.views||0),0),likes:published.reduce((n,x)=>n+Number(x.likes||0),0),shares:published.reduce((n,x)=>n+Number(x.shares||0),0),engagement,qualityAvg:Number(qualityAvg.toFixed(2)),revenueTotal:totalRevenue,runRate:Number(runRate.toFixed(2))},revenueBySource:revBy,topArticles,topCategories,issues,recommendations,openSystemEvents:s.data||[],activeAutomation:o.data||[],trending:t.data||[],generated_at:new Date().toISOString()});
+  } catch (e) { response.status(500).json({ok:false,error:e.message}); }
+});
+
+app.get('/api/admin/search', admin, async (request,response)=>{
+  try{
+    const q=cleanText(request.query.q,120);
+    if(!q) return response.json({articles:[],videos:[]});
+    const [a,v]=await Promise.all([
+      adminClient.from('articles').select('id,title,category,status,views,likes,shares,published_at').ilike('title',`%${q}%`).limit(25),
+      adminClient.from('videos').select('id,title,category,status,views,likes,shares,created_at').ilike('title',`%${q}%`).limit(25)
+    ]);
+    response.json({articles:a.data||[],videos:v.data||[],errors:[a.error?.message,v.error?.message].filter(Boolean)});
+  }catch(e){response.status(500).json({error:e.message});}
+});
+
+app.patch('/api/admin/affiliate/:id', admin, async (request,response)=>{
+  try{
+    const b=request.body||{};
+    const payload={partner_name:cleanText(b.partner_name,200),title:cleanText(b.title,500),description:cleanText(b.description,3000)||null,target_url:cleanText(b.target_url,2000),image_url:cleanText(b.image_url,1500)||null,category:cleanText(b.category,80)||null,commission_model:['cpa','cps','cpc','fixed','unknown'].includes(b.commission_model)?b.commission_model:'unknown',estimated_commission:Number(b.estimated_commission)||null,active:b.active!==false,updated_at:new Date().toISOString()};
+    const {data,error}=await adminClient.from('affiliate_offers').update(payload).eq('id',request.params.id).select().single();
+    if(error) throw error; response.json(data);
+  }catch(e){response.status(400).json({error:e.message});}
+});
+app.delete('/api/admin/affiliate/:id', admin, async (request,response)=>{ const {error}=await adminClient.from('affiliate_offers').delete().eq('id',request.params.id); if(error) return response.status(400).json({error:error.message}); response.status(204).end(); });
+
+
+/* =========================================================
    STATIC FILES
 ========================================================= */
 
@@ -6028,6 +6090,8 @@ app.use(
 /* =========================================================
    EXPORT FOR VERCEL
 ========================================================= */
+
+
 
 export default app;
 
