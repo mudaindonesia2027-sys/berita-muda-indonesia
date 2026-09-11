@@ -1,6 +1,6 @@
 {
-  "name": "berita-muda-indonesia-final-master-one-file",
-  "version": "7.0.0",
+  "name": "berita-muda-indonesia-owner-intelligence-os",
+  "version": "19.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -22,5 +22,5 @@
   "engines": {
     "node": ">=20"
   },
-  "description": "Final Master One File package consolidated from the V7 Premium Real Implementation archive and V6 production lineage."
+  "description": "MUDA Indonesia Ultimate Owner OS V19 — consolidated Owner control plane for news, video, intelligence, monetization, finance, operations and governance."
 }
