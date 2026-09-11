@@ -16,6 +16,81 @@ button.primary{border:0;background:linear-gradient(135deg,#2485ff,#38c7ff);color
 .table-wrap{overflow:auto}.tbl{width:100%;border-collapse:collapse;min-width:680px}.tbl th,.tbl td{border-bottom:1px solid var(--line);padding:9px 8px;text-align:left;font-size:11px}.tbl th{color:#a9bed5;font-size:10px;text-transform:uppercase;letter-spacing:.06em}.tbl td{color:#dce8f5}.right{text-align:right}.search{display:flex;gap:8px}.search input{flex:1;padding:10px 11px;border-radius:10px;border:1px solid var(--line);background:#091524;color:var(--text)}
 .modal-back{position:fixed;inset:0;display:grid;place-items:center;padding:20px;background:rgba(0,0,0,.62);z-index:50}.modal{width:min(760px,100%);max-height:90vh;overflow:auto;padding:20px;border:1px solid var(--line);border-radius:18px;background:#091524;box-shadow:var(--shadow)}.modal-head{display:flex;justify-content:space-between;align-items:center}.modal-head h3{margin:0}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.span-2{grid-column:1/-1}.status{font-size:11px;color:var(--muted);margin-top:8px}
 @media(max-width:1100px){.hero,.grid-2{grid-template-columns:1fr}.grid-4{grid-template-columns:repeat(2,1fr)}}@media(max-width:700px){.shell{width:min(100% - 18px,1480px)}.grid-3,.form-grid{grid-template-columns:1fr}.span-2{grid-column:auto}.identity .email{display:none}.hero h1{font-size:26px}}
+
+/* V11.1 EXECUTIVE DESIGN SYSTEM */
+:root{
+  --bg:#050a12;--bg2:#08111e;--panel:#0b1420;--panel2:#0e1927;--line:#1b2a3d;
+  --text:#f3f7fb;--muted:#8798ad;--primary:#2f8cff;--primary2:#4fd6ff;
+  --ok:#35d58a;--warn:#f6bd4d;--danger:#ff6675;--violet:#8d7bff;
+  --shadow:0 24px 70px rgba(0,0,0,.34);--radius:18px;
+}
+body{letter-spacing:.002em}
+.shell{width:min(1540px,calc(100% - 36px))}
+.topbar{box-shadow:0 10px 35px rgba(0,0,0,.2)}
+.topbar-in{min-height:62px}
+.topbar .brand{font-size:14px;font-weight:950}
+.topbar .brand span{display:inline-block;margin-left:7px;color:#79dcff;font-size:11px;letter-spacing:.11em}
+.identity{gap:8px}
+.identity .email{max-width:330px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.main{padding-top:22px}
+.hero{grid-template-columns:1.55fr .95fr;gap:18px}
+.hero-card,.panel{
+  border-color:#1c3047;background:
+  linear-gradient(180deg,rgba(15,28,45,.97),rgba(8,16,27,.97));
+  box-shadow:0 16px 45px rgba(0,0,0,.18);
+  border-radius:20px;
+}
+.hero-card{padding:24px}
+.hero-card:first-child{position:relative;overflow:hidden}
+.hero-card:first-child:after{
+  content:"";position:absolute;right:-100px;top:-100px;width:280px;height:280px;border-radius:50%;
+  background:radial-gradient(circle,rgba(47,140,255,.25),transparent 68%);pointer-events:none
+}
+.tag{font-size:10px;letter-spacing:.16em;font-weight:900;color:#70d9ff}
+.hero h1{font-size:clamp(28px,3vw,46px);line-height:1.03;max-width:820px;margin:10px 0 12px;letter-spacing:-.035em}
+.hero p{max-width:900px;color:#a8b8c9;font-size:14px;line-height:1.65}
+.hero-actions{gap:8px;flex-wrap:wrap}
+button.primary{background:linear-gradient(135deg,#1e7cff,#34c8ff);box-shadow:0 8px 24px rgba(47,140,255,.22)}
+button.secondary{background:#0a1523;border-color:#253a52}
+button.secondary:hover,button.primary:hover{transform:translateY(-1px)}
+.nav{
+  position:sticky;top:63px;z-index:16;display:flex;gap:5px;overflow:auto;padding:7px;margin:14px 0;
+  background:rgba(6,13,22,.86);backdrop-filter:blur(18px);border:1px solid #17263a;border-radius:15px
+}
+.nav button{
+  border:1px solid transparent;background:transparent;color:#8fa3bb;font-weight:850;font-size:12px;
+  padding:10px 14px;border-radius:10px;white-space:nowrap
+}
+.nav button:hover{color:#eaf4ff;background:#0c1928}
+.nav button.active{color:#fff;background:linear-gradient(135deg,#164d86,#0e294a);border-color:#2367a8;box-shadow:inset 0 0 0 1px rgba(255,255,255,.04)}
+.metric{
+  background:linear-gradient(180deg,#0e1a29,#0a1320);border:1px solid #1b2c42;border-radius:15px;padding:15px 16px
+}
+.metric span{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:#7f93aa}
+.metric b{display:block;margin-top:5px;font-size:26px;line-height:1}
+.grid-2{gap:14px}.grid-3{gap:12px}.grid-4{gap:12px}
+.section-head{align-items:center}
+.section-head h2{font-size:18px;letter-spacing:-.02em}
+.section-head p{font-size:12px;line-height:1.45}
+.search{
+  display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center
+}
+.search input{
+  min-height:46px;padding:12px 14px;border-radius:13px;border:1px solid #27415a;
+  background:#071321;color:#eef6ff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.02)
+}
+.search input:focus{border-color:#3d9dff;box-shadow:0 0 0 3px rgba(47,140,255,.12)}
+.list{display:grid;gap:8px}
+.list>div{border:1px solid #172a3f;background:rgba(8,17,29,.62);border-radius:12px;padding:11px 12px}
+.status{
+  border:1px dashed #29445d;background:rgba(8,18,30,.65);border-radius:12px;padding:10px 12px;color:#8fa6bd
+}
+.score-box{border:1px solid #1d3148;background:linear-gradient(180deg,#0f1d2e,#0b1522);border-radius:15px;padding:14px}
+.score-box .num{font-size:25px;font-weight:950}
+.table-wrap{border:1px solid #1a2c40;border-radius:13px;overflow:auto;background:#081320}
+table{min-width:760px}
+.modal{border-color:#29445f;box-shadow:0 28px 90px rgba(0,0,0,.55)}
+@media (max-width:900px){.hero{grid-template-columns:1fr}.nav{top:60px}.search{grid-template-columns:1fr}.identity .email{max-width:180px}}
 </style>
 </head>
 <body>
@@ -34,34 +109,50 @@ button.primary{border:0;background:linear-gradient(135deg,#2485ff,#38c7ff);color
   <main class="shell main">
     <section class="hero">
       <div class="hero-card">
-        <div class="tag">EXECUTIVE COMMAND CENTER</div>
-        <h1>Satu pusat kendali untuk seluruh operasi media.</h1>
-        <p>Newsroom, intelligence, breaking, audience, monetisasi, automation, source reliability, governance dan integrasi provider dalam satu lapisan Owner.</p>
+        <div class="tag">MUDA OWNER OS · EXECUTIVE CONTROL</div>
+        <h1>Kontrol newsroom, audience, revenue, automation, dan reliability dari satu layar.</h1>
+        <p>Satu control plane untuk perintah Owner, intelligence, editorial workflow, media, homepage, audience, money, operasi, dan governance. Setiap aksi mengikuti policy, risk gate, audit, dan recovery path.</p>
         <div class="hero-actions">
-          <button class="primary" onclick="runSync()">Sync News</button>
-          <button class="secondary" onclick="runBreaking()">Run Breaking Engine</button>
-          <button class="secondary" onclick="openArticle()">+ Artikel</button>
-          <button class="secondary" onclick="openVideo()">+ Video</button>
-          <button class="secondary" onclick="seedTask()">+ Task Owner</button>
+          <button class="primary" onclick="runSync()">↻ Sync News</button>
+          <button class="secondary" onclick="runBreaking()">⚡ Breaking Engine</button>
+          <button class="secondary" onclick="openArticle()">＋ Artikel</button>
+          <button class="secondary" onclick="openVideo()">＋ Video</button>
+          <button class="secondary" onclick="seedTask()">＋ Task Owner</button>
+          <button class="secondary" onclick="document.querySelector('[data-view=command]').click();document.getElementById('ownerCommandText')?.focus()">⌘ Command</button>
         </div>
-        <div class="status" id="lastSync">Memuat…</div>
+        <div class="status" id="lastSync">System booting · checking intelligence, reliability, and owner services…</div>
       </div>
-      <div class="hero-card"><div class="tag">EXECUTIVE SCORE</div><div class="score" style="margin-top:12px">
-        <div class="score-box"><small>Health</small><div class="num" id="mHealth">—</div></div>
-        <div class="score-box"><small>Active Breaking</small><div class="num" id="mBreaking">—</div></div>
-        <div class="score-box"><small>Live Events</small><div class="num" id="mEvents">—</div></div>
-        <div class="score-box"><small>Open Alerts</small><div class="num" id="mAlerts">—</div></div>
-      </div></div>
+      <div class="hero-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div class="tag">EXECUTIVE PULSE</div><span class="pill ok">OWNER CONTROL</span></div>
+        <div class="score" style="margin-top:12px">
+          <div class="score-box"><small>Health</small><div class="num" id="mHealth">—</div></div>
+          <div class="score-box"><small>Breaking</small><div class="num" id="mBreaking">—</div></div>
+          <div class="score-box"><small>Live Events</small><div class="num" id="mEvents">—</div></div>
+          <div class="score-box"><small>Open Alerts</small><div class="num" id="mAlerts">—</div></div>
+        </div>
+        <div class="status" style="margin-top:12px">Decision layer aktif · recommendations, alerts, source health, and owner actions are unified.</div>
+      </div>
     </section>
 
+    <div class="status" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+      <div style="display:flex;gap:7px;flex-wrap:wrap">
+        <span class="pill ok">VOICE READY</span>
+        <span class="pill ok">COMMAND BUS</span>
+        <span class="pill ok">RISK GATE</span>
+        <span class="pill ok">AUDIT</span>
+        <span class="pill ok">UNDO FOUNDATION</span>
+        <span class="pill ok">INTELLIGENCE</span>
+      </div>
+      <span class="muted">V11 · unified control plane</span>
+    </div>
     <div class="nav" id="nav">
       <button class="active" data-view="command">Command</button><button data-view="newsroom">Newsroom</button><button data-view="intelligence">Intelligence</button><button data-view="audience">Audience</button><button data-view="money">Money</button><button data-view="operations">Operations</button><button data-view="governance">Governance</button>
     </div>
 
     <section id="view-command" class="section view">
-      <div class="panel" style="margin-bottom:12px"><div class="section-head"><div><h2>Owner Command</h2><p>Perintah bahasa alami untuk aksi yang tersedia. Aksi berisiko tinggi selalu meminta konfirmasi dan tercatat di audit.</p></div><button class="secondary" onclick="loadCommands()">Command Log</button></div><div class="search"><input id="ownerCommandText" placeholder="Contoh: sync berita sekarang / jadikan artikel ID ... featured / publish homepage ID ..." /><button class="primary" onclick="submitOwnerCommand()">Jalankan</button></div><div id="commandHint" class="status">Command Router aktif · tindakan eksternal tetap dikendalikan registry dan confirmation gate.</div><div id="commandLog" class="list" style="margin-top:10px"></div></div>
+      <div class="panel" style="margin-bottom:12px"><div class="section-head"><div><h2>Owner Command</h2><p>Perintah bahasa alami untuk aksi yang tersedia. Aksi berisiko tinggi selalu meminta konfirmasi dan tercatat di audit.</p></div><button class="secondary" onclick="loadCommands()">Command Log</button></div><div class="search"><input id="ownerCommandText" placeholder="Contoh: sync berita sekarang / jadikan artikel ID ... featured / publish homepage ID ..." /><button class="secondary" id="voiceCommandBtn" type="button">🎙️ Voice</button><button class="primary" onclick="submitOwnerCommand()">Jalankan</button></div><div id="commandHint" class="status">Command Router aktif · tindakan eksternal tetap dikendalikan registry dan confirmation gate.</div><div id="commandLog" class="list" style="margin-top:10px"></div></div>
       <div class="grid-4"><div class="metric"><span>Published Articles</span><b id="pubArticles">—</b></div><div class="metric"><span>Views</span><b id="views">—</b></div><div class="metric"><span>Shares</span><b id="shares">—</b></div><div class="metric"><span>Degraded Sources</span><b id="degraded">—</b></div></div>
-      <div class="grid-2" style="margin-top:12px"><div class="panel"><div class="section-head"><div><h2>Recommended Owner Actions</h2><p>Tugas prioritas lintas lini.</p></div></div><div id="tasks" class="list"></div></div><div class="panel"><div class="section-head"><div><h2>Live Alerts</h2><p>Warning, error, critical.</p></div></div><div id="alerts" class="list"></div></div></div>
+      <div class="grid-2" style="margin-top:12px"><div class="panel"><div class="section-head"><div><h2>Decision Brief</h2><p>Rekomendasi tindakan lintas newsroom, reliability, growth, dan money.</p></div><button class="secondary" onclick="loadDecision()">Refresh</button></div><div id="decisionBrief" class="list"></div><div class="status" id="performanceBrief">Performance: checking…</div></div><div class="panel"><div class="section-head"><div><h2>Recommended Owner Actions</h2><p>Tugas prioritas lintas lini.</p></div></div><div id="tasks" class="list"></div></div><div class="panel"><div class="section-head"><div><h2>Live Alerts</h2><p>Warning, error, critical.</p></div></div><div id="alerts" class="list"></div></div></div>
     </section>
 
     <section id="view-newsroom" class="section view hidden">
@@ -110,7 +201,7 @@ function enter(){$('login').classList.add('hidden');$('app').classList.remove('h
 if(token)enter();
 $('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')login()});
 $('nav').addEventListener('click',e=>{const b=e.target.closest('button[data-view]');if(!b)return;document.querySelectorAll('#nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.view').forEach(x=>x.classList.add('hidden'));$('view-'+b.dataset.view).classList.remove('hidden');const loaders={command:loadCommands,newsroom:loadContent,intelligence:loadRadar,audience:loadAudience,money:loadMoney,operations:loadOperations,governance:loadGovernance};if(loaders[b.dataset.view])loaders[b.dataset.view]()});
-async function refreshAll(){try{const o=await api('/api/admin/owner/overview');state.overview=o;$('mHealth').textContent=(o.executive.health_score||0)+'%';$('mBreaking').textContent=fmt(o.executive.active_breaking);$('mEvents').textContent=fmt(o.executive.active_events);$('mAlerts').textContent=fmt(o.executive.open_alerts);$('pubArticles').textContent=fmt(o.executive.published_articles);$('views').textContent=fmt(o.executive.total_views);$('shares').textContent=fmt(o.executive.total_shares);$('degraded').textContent=fmt(o.executive.degraded_sources);$('healthPill').textContent=(o.executive.health_score||0)+'% HEALTH';$('healthPill').className='pill '+(o.executive.health_score>=85?'ok':'warn');$('lastSync').textContent='Dashboard diperbarui '+new Date(o.generated_at).toLocaleString('id-ID');renderTasks(o.tasks);renderAlerts(o.alerts);await Promise.allSettled([loadCommands(),loadContent(),loadHomepage(),loadRadar(),loadMoney(),loadOperations(),loadAudience(),loadGovernance()])}catch(e){$('healthPill').textContent='ERROR';$('healthPill').className='pill warn';console.error(e)}}
+async function refreshAll(){try{const o=await api('/api/admin/owner/overview');state.overview=o;$('mHealth').textContent=(o.executive.health_score||0)+'%';$('mBreaking').textContent=fmt(o.executive.active_breaking);$('mEvents').textContent=fmt(o.executive.active_events);$('mAlerts').textContent=fmt(o.executive.open_alerts);$('pubArticles').textContent=fmt(o.executive.published_articles);$('views').textContent=fmt(o.executive.total_views);$('shares').textContent=fmt(o.executive.total_shares);$('degraded').textContent=fmt(o.executive.degraded_sources);$('healthPill').textContent=(o.executive.health_score||0)+'% HEALTH';$('healthPill').className='pill '+(o.executive.health_score>=85?'ok':'warn');$('lastSync').textContent='Dashboard diperbarui '+new Date(o.generated_at).toLocaleString('id-ID');renderTasks(o.tasks);renderAlerts(o.alerts);await Promise.allSettled([loadCommands(),loadDecision()]);}catch(e){$('healthPill').textContent='ERROR';$('healthPill').className='pill warn';console.error(e)}}
 function renderTasks(rows){$('tasks').innerHTML=(rows||[]).map(x=>`<div class="item"><div class="item-row"><div><h3>${esc(x.title)}</h3><p>${esc(x.task_type)} · priority ${esc(x.priority)} ${x.due_at?'· '+esc(new Date(x.due_at).toLocaleString('id-ID')):''}</p></div><span class="tag">${esc(x.status)}</span></div><div class="actions"><button class="good" onclick="taskStatus('${x.id}','done')">Selesai</button><button class="secondary" onclick="taskStatus('${x.id}','in_progress')">Kerjakan</button></div></div>`).join('')||'<div class="muted">Tidak ada task terbuka.</div>'}
 function renderAlerts(rows){$('alerts').innerHTML=(rows||[]).map(x=>`<div class="item"><div class="item-row"><div><h3>${esc(x.title)}</h3><p>${esc(x.message||'')} · ${esc(x.source)}</p></div><span class="tag ${x.severity==='critical'?'danger-t':''}">${esc(x.severity)}</span></div><div class="actions"><button class="secondary" onclick="alertStatus('${x.id}','acknowledged')">Acknowledge</button><button class="good" onclick="alertStatus('${x.id}','resolved')">Resolve</button></div></div>`).join('')||'<div class="muted">Tidak ada alert terbuka.</div>'}
 async function taskStatus(id,status){await api('/api/admin/tasks/'+id,{method:'PATCH',body:JSON.stringify({status})});refreshAll()}
@@ -133,7 +224,8 @@ async function createLayout(){try{const items=JSON.parse($('hl_items').value||'[
 async function publishLayout(id){await api('/api/admin/homepage/layouts/'+id,{method:'PATCH',body:JSON.stringify({status:'published'})});loadHomepage();toast('Homepage layout published')}
 async function archiveLayout(id){await api('/api/admin/homepage/layouts/'+id,{method:'PATCH',body:JSON.stringify({status:'archived'})});loadHomepage();toast('Layout diarsipkan')}
 async function loadRadar(){try{const d=await api('/api/admin/owner/radar');state.radar=d;$('radar').innerHTML=[...(d.breaking||[]).map(x=>`<div class="item"><div class="item-row"><div><h3>BREAKING · ${esc(x.title||x.event_title||'')}</h3><p>score ${esc(x.score||x.importance_score||0)} · status ${esc(x.status||'')}</p></div><span class="tag">BREAKING</span></div></div>`),...(d.events||[]).map(x=>`<div class="item"><h3>${esc(x.title)}</h3><p>${esc(x.category)} · ${esc(x.article_count)} artikel · ${esc(x.source_count)} sumber · importance ${esc(x.importance_score||0)}</p></div>`),...(d.ranked||[]).slice(0,8).map(x=>`<div class="item"><h3>${esc(x.title)}</h3><p>Owner score ${esc(x.owner_score)} · views ${fmt(x.views)} · shares ${fmt(x.shares)}</p></div>`)].join('')||'<div class="muted">Radar kosong.</div>';renderSources(d)}catch(e){$('radar').innerHTML='<div class="muted">'+esc(e.message)+'</div>'}}
-function renderSources(d){$('sourcesMini').innerHTML=(d.ranked?[]:[]).concat(state.overview?.sources||[]).slice(0,20).map(x=>`<div class="item"><div class="item-row"><div><h3>${esc(x.name)}</h3><p>${esc(x.status||'')} · latency ${fmt(x.last_latency_ms)}ms · failures ${fmt(x.failure_count)}</p></div><button class="secondary" onclick="toggleSource('${esc(x.id)}',${x.active===false})">${x.active===false?'Aktifkan':'Nonaktifkan'}</button></div></div>`).join('')||'<div class="muted">Belum ada source.</div>'}
+function renderSources(d){$('sourcesMini').innerHTML=(d.ranked?[]:[]).concat(state.overview?.sources||[]).slice(0,20).map(x=>`<div class="item"><div class="item-row"><div><h3>${esc(x.name)}</h3><p>${esc(x.status||'')} · latency ${fmt(x.last_latency_ms)}ms · failures ${fmt(x.failure_count)}</p></div><button class="secondary" onclick="testSource('${esc(x.id)}')">Test</button><button class="secondary" onclick="toggleSource('${esc(x.id)}',${x.active===false})">${x.active===false?'Aktifkan':'Nonaktifkan'}</button></div></div>`).join('')||'<div class="muted">Belum ada source.</div>'}
+async function testSource(id){try{const d=await api('/api/admin/sources/'+id+'/test',{method:'POST'});toast(`Source test ${d.ok?'PASS':'FAIL'} · ${d.latency_ms||0}ms`);refreshAll()}catch(e){toast(e.message,true)}}
 async function toggleSource(id,active){await api('/api/admin/sources/'+id,{method:'PATCH',body:JSON.stringify({active})});loadRadar();refreshAll()}
 async function loadAudience(){await Promise.allSettled([loadComments(),loadNewsletter()])}
 async function loadComments(){try{const rows=await api('/api/admin/comments?status=pending&limit=30');$('comments').innerHTML=(rows||[]).map(x=>`<div class="item"><h3>${esc(x.body||'')}</h3><p>score ${fmt(x.moderation_score)} · ${esc(x.moderation_reason||'')} · user ${esc(x.user_id||'')}</p><div class="actions"><button class="good" onclick="moderate('${x.id}','approved')">Approve</button><button class="warn" onclick="moderate('${x.id}','hidden')">Hide</button><button class="danger" onclick="moderate('${x.id}','blocked')">Block</button></div></div>`).join('')||'<div class="muted">Tidak ada komentar pending.</div>'}catch(e){$('comments').innerHTML='<div class="muted">'+esc(e.message)+'</div>'}}
@@ -145,7 +237,11 @@ async function loadProviders(){try{renderProviders('providers',await api('/api/a
 function renderProviders(target,rows){rows=rows||state.overview?.providers||[];$(''+target).innerHTML=(rows||[]).map(p=>`<div class="item"><div class="item-row"><div><h3>${esc(p.display_name)}</h3><p>${esc(p.category)} · status ${esc(p.status)}</p></div><div class="actions"><button class="secondary" onclick="setProvider('${esc(p.provider_key)}','${p.status==='active'?'disabled':'active'}')">${p.status==='active'?'Disable':'Activate'}</button></div></div></div>`).join('')}
 async function setProvider(k,status){await api('/api/admin/owner/providers/'+k,{method:'PATCH',body:JSON.stringify({status})});loadProviders();loadMoney()}
 async function loadAutomation(){try{const rows=await api('/api/admin/automation/runs');$('automation').innerHTML=(rows||[]).map(x=>`<div class="item"><div class="item-row"><div><h3>${esc(x.trigger_type||'automation')}</h3><p>${esc(x.status)} · ${x.duration_ms?esc(x.duration_ms+'ms'):''}</p></div><span class="tag">${esc(x.created_at?new Date(x.created_at).toLocaleString('id-ID'):'')}</span></div></div>`).join('')||'<div class="muted">Belum ada automation run.</div>'}catch(e){$('automation').innerHTML='<div class="muted">'+esc(e.message)+'</div>'}}
+async function loadDecision(){try{const [d,p]=await Promise.all([api('/api/admin/owner/decision'),api('/api/admin/owner/performance')]);$('decisionBrief').innerHTML=(d.actions||[]).map(x=>`<div class="item"><div class="item-row"><div><h3>${esc(x.title)}</h3><p>${esc(x.reason||'')} · confidence ${Math.round(Number(x.confidence||0)*100)}%</p></div><span class="tag">${esc(x.action_key||'insight')}</span></div></div>`).join('')||'<div class="muted">Tidak ada tindakan prioritas saat ini.</div>';const bad=(p.checks||[]).filter(x=>!x.ok).length;$('performanceBrief').textContent=`Performance probe ${p.total_ms}ms · ${bad?'attention '+bad:'all checks healthy'} · cache TTL aktif`;}catch(e){$('decisionBrief').innerHTML='<div class="muted">'+esc(e.message)+'</div>';$('performanceBrief').textContent='Performance probe gagal';}}
+
 async function loadCommands(){try{const rows=await api('/api/admin/owner/commands?limit=20');state.commands=rows||[];$('commandLog').innerHTML=(state.commands||[]).map(x=>`<div class="item"><div class="item-row"><div><h3>${esc(x.intent_key||'unknown')}</h3><p>${esc(x.status)} · ${esc(x.risk_level||'low')} · ${esc(new Date(x.created_at).toLocaleString('id-ID'))}</p><p>${esc(x.input_text||'')}</p></div>${x.status==='needs_confirmation'?`<button class="warn" onclick="confirmCommand('${x.id}')">Konfirmasi</button>`:''}</div></div>`).join('')||'<div class="muted">Belum ada command.</div>'}catch(e){$('commandLog').innerHTML='<div class="muted">'+esc(e.message)+'</div>'}}
+async function startOwnerVoice(){const R=window.SpeechRecognition||window.webkitSpeechRecognition;if(!R)return toast('Voice recognition tidak didukung browser ini',true);const r=new R();r.lang='id-ID';r.interimResults=false;r.maxAlternatives=1;$('voiceCommandBtn').textContent='🎧 Mendengar…';try{const d=await new Promise((resolve,reject)=>{r.onresult=e=>resolve(e.results?.[0]?.[0]?.transcript||'');r.onerror=e=>reject(new Error(e.error||'Voice recognition gagal'));r.onend=()=>{};r.start()});$('ownerCommandText').value=d;submitOwnerCommand()}catch(e){toast(e.message,true)}finally{$('voiceCommandBtn').textContent='🎙️ Voice'}}
+$('voiceCommandBtn')?.addEventListener('click',startOwnerVoice);
 async function submitOwnerCommand(){const text=$('ownerCommandText').value.trim();if(!text)return toast('Tulis perintah Owner dulu',true);try{const d=await api('/api/admin/owner/command',{method:'POST',body:JSON.stringify({text})});if(d.requires_confirmation){$('commandHint').textContent='Konfirmasi diperlukan untuk aksi '+d.intent_key+' · risk '+d.risk_level;toast('Menunggu konfirmasi Owner');}else{$('commandHint').textContent='Selesai · '+(d.action||'action');toast('Perintah berhasil dijalankan');$('ownerCommandText').value='';refreshAll()}loadCommands()}catch(e){toast(e.message,true)}}
 async function confirmCommand(id){try{await api('/api/admin/owner/command/'+id+'/confirm',{method:'POST'});toast('Command dikonfirmasi dan dijalankan');loadCommands();refreshAll()}catch(e){toast(e.message,true)}}
 async function loadWallet(){try{const [sum,tx,payouts]=await Promise.all([api('/api/admin/wallet/summary'),api('/api/admin/wallet/transactions?limit=40'),api('/api/admin/wallet/payouts?limit=30')]);state.wallet=sum||[];state.payouts=payouts||[];$('walletSummary').innerHTML=(state.wallet||[]).map(w=>`<div class="metric"><span>Available</span><b>${fmt(w.available_balance)}</b><small>Pending ${fmt(w.pending_balance)}</small></div>`).join('')||'<div class="muted">Wallet belum tersedia atau belum dibuat.</div>';$('walletTx').innerHTML=`<table class="tbl"><thead><tr><th>Provider</th><th>Direction</th><th>Amount</th><th>Status</th><th>Reference</th></tr></thead><tbody>${(tx||[]).slice(0,40).map(x=>`<tr><td>${esc(x.provider||'—')}</td><td>${esc(x.direction||'')}</td><td>${fmt(x.amount)}</td><td>${esc(x.status||'')}</td><td>${esc(x.external_reference||'')}</td></tr>`).join('')}</tbody></table>`;$('payouts').innerHTML=(state.payouts||[]).map(x=>`<div class="item"><div class="item-row"><div><h3>${fmt(x.amount)} ${esc(x.currency||'')}</h3><p>${esc(x.status||'')} · ${esc(x.provider||'')}</p></div><span class="tag">${esc(x.created_at?new Date(x.created_at).toLocaleDateString('id-ID'):'')}</span></div></div>`).join('')||'<div class="muted">Belum ada payout.</div>'}catch(e){$('walletSummary').innerHTML='<div class="muted">'+esc(e.message)+'</div>'}}
