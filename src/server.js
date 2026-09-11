@@ -6013,6 +6013,78 @@ const ownerScore = item => {
 };
 
 
+
+const pct = (value, digits = 1) => Number.isFinite(Number(value)) ? Number(value).toFixed(digits) : '0.0';
+const ownerDecisionBrief = async () => {
+  const [radar, sources, alerts, tasks, providers, articles] = await Promise.all([
+    adminClient.from('breaking_candidates').select('id,title,score,status,detected_at,article_id').in('status',['candidate','approved']).order('score',{ascending:false}).limit(12),
+    adminClient.from('news_sources').select('id,name,status,failure_count,last_success_at,last_latency_ms,active').order('failure_count',{ascending:false}).limit(20),
+    adminClient.from('owner_alerts').select('id,severity,title,source,created_at,status').eq('status','open').order('created_at',{ascending:false}).limit(12),
+    adminClient.from('owner_tasks').select('id,title,priority,status,due_at,task_type').in('status',['open','in_progress']).order('priority',{ascending:false}).limit(12),
+    adminClient.from('integration_providers').select('provider_key,display_name,status,category,last_checked_at').order('display_name'),
+    adminClient.from('articles').select('id,title,summary,category,views,likes,shares,published_at,intelligence_score,importance_score,status,featured,breaking').eq('status','published').order('published_at',{ascending:false}).limit(80)
+  ]);
+  for (const q of [radar,sources,alerts,tasks,providers,articles]) if (q.error) throw q.error;
+  const ranked=(articles.data||[]).map(a=>({...a,owner_score:ownerScore(a)})).sort((a,b)=>b.owner_score-a.owner_score);
+  const degraded=(sources.data||[]).filter(x=>x.active!==false && x.status && x.status!=='healthy');
+  const highBreaking=(radar.data||[]).filter(x=>Number(x.score||0)>=80);
+  const decisions=[];
+  if (highBreaking.length) decisions.push({priority:100,kind:'editorial',title:`${highBreaking.length} kandidat breaking berisiko tinggi`,why:`Skor breaking tertinggi ${pct(highBreaking[0].score)}.`,action:'review_breaking',resource_id:highBreaking[0].article_id||null});
+  if (degraded.length) decisions.push({priority:92,kind:'operations',title:`${degraded.length} source membutuhkan perhatian`,why:'Source health menunjukkan degradasi atau error.',action:'investigate_sources',resource_id:degraded[0]?.id||null});
+  if (ranked[0]) decisions.push({priority:88,kind:'content',title:`Story opportunity: ${ranked[0].title}`,why:`Owner score ${pct(ranked[0].owner_score)} menggabungkan freshness, engagement, intelligence dan reach.`,action:'review_story',resource_id:ranked[0].id});
+  if ((alerts.data||[]).length) decisions.push({priority:90,kind:'risk',title:`${alerts.data.length} alert terbuka`,why:'Alert perlu triage dan acknowledgment.',action:'open_alerts'});
+  if ((tasks.data||[]).length) decisions.push({priority:80,kind:'governance',title:`${tasks.data.length} tugas Owner masih terbuka`,why:'Prioritas tertinggi perlu dituntaskan sebelum backlog tumbuh.',action:'open_tasks'});
+  return {generated_at:new Date().toISOString(),confidence:Math.max(0,Math.min(100,Math.round(96-degraded.length*4-(alerts.data||[]).length*1.5))),headline:decisions[0]?.title||'Sistem stabil; tidak ada keputusan kritis baru.',decisions:decisions.sort((a,b)=>b.priority-a.priority).slice(0,8),top_story:ranked[0]||null,top_stories:ranked.slice(0,8),breaking_candidates:radar.data||[],degraded_sources:degraded,alerts:alerts.data||[],tasks:tasks.data||[],providers:providers.data||[]};
+};
+const ownerPerformanceSnapshot = async () => {
+  const since=new Date(Date.now()-24*3600000).toISOString();
+  const [articles,events]=await Promise.all([
+    adminClient.from('articles').select('id,title,category,views,likes,shares,published_at,featured,breaking,intelligence_score,importance_score').eq('status','published').gte('published_at',since).order('published_at',{ascending:false}).limit(100),
+    adminClient.from('analytics_events').select('event_type,content_type,content_id,session_id,created_at').gte('created_at',since).limit(5000)
+  ]);
+  if(articles.error) throw articles.error; if(events.error) throw events.error;
+  const rows=articles.data||[], ev=events.data||[], totals={views:0,likes:0,shares:0};
+  rows.forEach(r=>{totals.views+=Number(r.views||0);totals.likes+=Number(r.likes||0);totals.shares+=Number(r.shares||0)});
+  const uniqueSessions=new Set(ev.map(x=>x.session_id).filter(Boolean)).size;
+  const byType=ev.reduce((m,x)=>(m[x.event_type]=(m[x.event_type]||0)+1,m),{});
+  const ranked=rows.map(a=>({...a,owner_score:ownerScore(a),engagement_rate:Number(a.views||0)?((Number(a.likes||0)+Number(a.shares||0))/Number(a.views||0))*100:0})).sort((a,b)=>b.owner_score-a.owner_score);
+  return {generated_at:new Date().toISOString(),window:'24h',totals,unique_sessions:uniqueSessions,event_counts:byType,top_stories:ranked.slice(0,10)};
+};
+const ownerAudienceBrief = async () => {
+  const since=new Date(Date.now()-24*3600000).toISOString();
+  const {data,error}=await adminClient.from('analytics_events').select('event_type,content_type,content_id,session_id,path,referrer,created_at').gte('created_at',since).limit(10000);
+  if(error) throw error;
+  const rows=data||[], byType=rows.reduce((m,x)=>(m[x.event_type]=(m[x.event_type]||0)+1,m),{}), sessions=new Set(rows.map(x=>x.session_id).filter(Boolean));
+  const refs={}; rows.forEach(x=>{if(x.referrer)refs[x.referrer]=(refs[x.referrer]||0)+1});
+  return {generated_at:new Date().toISOString(),window:'24h',events:rows.length,unique_sessions:sessions.size,by_event:byType,top_referrers:Object.entries(refs).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([source,count])=>({source,count}))};
+};
+const ownerRevenueForecast = async () => {
+  const since=new Date(Date.now()-30*86400000).toISOString();
+  const {data,error}=await adminClient.from('revenue_entries').select('source,amount,currency,occurred_at').gte('occurred_at',since).order('occurred_at',{ascending:false}).limit(5000);
+  if(error) throw error;
+  const rows=data||[], total=rows.reduce((s,r)=>s+Number(r.amount||0),0), bySource={};
+  rows.forEach(r=>{bySource[r.source]=(bySource[r.source]||0)+Number(r.amount||0)});
+  return {generated_at:new Date().toISOString(),window:'30d',total,run_rate_30d:total,estimated_next_30d:total,by_source:Object.entries(bySource).map(([source,amount])=>({source,amount})).sort((a,b)=>b.amount-a.amount),confidence:rows.length?Math.min(92,55+Math.min(35,rows.length/20)):25};
+};
+
+app.get('/api/admin/owner/intelligence', admin, async (_request,response)=>{
+  try{
+    const [decision,performance,audience,revenue]=await Promise.all([ownerDecisionBrief(),ownerPerformanceSnapshot(),ownerAudienceBrief(),ownerRevenueForecast()]);
+    const opportunity=Math.max(0,Math.min(100,Math.round((decision.top_story?.owner_score||0)*0.55 + Math.min(100,decision.breaking_candidates?.[0]?.score||0)*0.25 + Math.min(100,(performance.totals?.views||0)/1000)*0.20)));
+    response.json({generated_at:new Date().toISOString(),opportunity_score:opportunity,decision,performance,audience,revenue});
+  }catch(error){response.status(500).json({error:error.message||'Owner intelligence gagal'});}
+});
+
+app.post('/api/admin/owner/simulate', admin, async (request,response)=>{
+  try{
+    const id=cleanText(request.body?.article_id,120); if(!id) return response.status(400).json({error:'article_id wajib'});
+    const {data,error}=await adminClient.from('articles').select('id,title,views,likes,shares,published_at,intelligence_score,importance_score,featured,breaking,status').eq('id',id).maybeSingle();
+    if(error) throw error; if(!data) return response.status(404).json({error:'Artikel tidak ditemukan'});
+    const base=ownerScore(data), projected=Math.min(100,base*1.12+6), confidence=Math.max(35,Math.min(95,Math.round(60+base*0.35))), views=Number(data.views||0);
+    response.json({ok:true,article:data,simulation:{action:request.body?.action||'feature',current_score:base,projected_score:Math.round(projected*100)/100,projected_views_low:Math.round(views*1.08),projected_views_high:Math.round(views*1.32),projected_engagement:Math.min(99.9,(((Number(data.likes||0)+Number(data.shares||0)+1)/Math.max(1,views))*100*1.14)),confidence,risk:confidence>80?'low':'medium',assumptions:['freshness stable','audience demand comparable','homepage exposure increases visibility']}});
+  }catch(error){response.status(400).json({error:error.message});}
+});
+
 app.get('/api/admin/owner/decision', admin, async (_request,response)=>{
   try{response.json(await ownerDecisionBrief());}catch(error){response.status(500).json({error:error.message});}
 });
@@ -6831,6 +6903,422 @@ app.get('/api/public/homepage/live', async (_request,response)=>{
   response.json({layout:{id:layout.id,name:layout.name,config:layout.config,published_at:layout.published_at},items});
 });
 
+
+
+
+
+/* =========================================================
+   V18 — OWNER FINANCE ADMINISTRATION
+   Editable money ledger, receivables/payables, accounts,
+   recurring plans, monthly close and management reports.
+========================================================= */
+
+const OWNER_LEDGER_ENTRY_TYPES = ['ad_revenue','sponsor','affiliate','subscription','video','other_revenue','expense','ad_spend','people','technology','operations','tax','capital','fee','other'];
+const OWNER_MONEY_STATUSES = ['draft','planned','approved','settled','void'];
+const OWNER_FIN_STATUSES = ['draft','open','partial','paid','cancelled','overdue'];
+const cleanMoney = (value, fallback=0) => { const n=Number(value); return Number.isFinite(n)?n:fallback; };
+const isoDate = (value, fallback=null) => { const d=new Date(value||''); return Number.isNaN(d.getTime()) ? fallback : d.toISOString(); };
+
+async function ownerFinanceAdminData(periodStart=null, periodEnd=null){
+  const start = periodStart || new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+  const end = periodEnd || new Date().toISOString();
+  const [accounts, ledger, receivables, payables, recurring, closes, revenue, expenses, budgets] = await Promise.all([
+    v14SafeQuery(()=>adminClient.from('owner_money_accounts').select('*').eq('active',true).order('name')),
+    v14SafeQuery(()=>adminClient.from('owner_money_ledger').select('*').gte('occurred_at',start).lte('occurred_at',end).order('occurred_at',{ascending:false}).limit(2000)),
+    v14SafeQuery(()=>adminClient.from('owner_money_receivables').select('*').order('due_at',{ascending:true,nullsLast:true}).limit(500)),
+    v14SafeQuery(()=>adminClient.from('owner_money_payables').select('*').order('due_at',{ascending:true,nullsLast:true}).limit(500)),
+    v14SafeQuery(()=>adminClient.from('owner_money_recurring_rules').select('*').eq('active',true).order('next_run',{ascending:true,nullsLast:true}).limit(200)),
+    v14SafeQuery(()=>adminClient.from('owner_money_monthly_closes').select('*').order('period_month',{ascending:false}).limit(24)),
+    v14SafeQuery(()=>adminClient.from('revenue_entries').select('id,source,amount,currency,occurred_at,campaign_id,affiliate_offer_id').gte('occurred_at',start).lte('occurred_at',end).order('occurred_at',{ascending:false}).limit(3000)),
+    v14SafeQuery(()=>adminClient.from('owner_expenses').select('id,category,vendor,description,amount,currency,status,due_at,paid_at,created_at').gte('created_at',start).lte('created_at',end).order('created_at',{ascending:false}).limit(3000)),
+    v14SafeQuery(()=>adminClient.from('owner_budgets').select('*').order('period_end',{ascending:false}).limit(200))
+  ]);
+
+  const ledgerRows = ledger.data || [];
+  const legacyRevenue = revenue.data || [];
+  const legacyExpenses = expenses.data || [];
+  const inflow = ledgerRows.filter(x=>x.direction==='inflow' && x.status!=='void').reduce((a,x)=>a+cleanMoney(x.amount),0) + legacyRevenue.reduce((a,x)=>a+cleanMoney(x.amount),0);
+  const outflow = ledgerRows.filter(x=>x.direction==='outflow' && x.status!=='void').reduce((a,x)=>a+cleanMoney(x.amount),0) + legacyExpenses.filter(x=>['approved','paid'].includes(x.status)).reduce((a,x)=>a+cleanMoney(x.amount),0);
+  const net = inflow-outflow;
+  const openAR = (receivables.data||[]).filter(x=>['open','partial','overdue'].includes(x.status)).reduce((a,x)=>a+cleanMoney(x.amount),0);
+  const openAP = (payables.data||[]).filter(x=>['open','partial','overdue'].includes(x.status)).reduce((a,x)=>a+cleanMoney(x.amount),0);
+  const overdueAR = (receivables.data||[]).filter(x=>x.status==='overdue').reduce((a,x)=>a+cleanMoney(x.amount),0);
+  const overdueAP = (payables.data||[]).filter(x=>x.status==='overdue').reduce((a,x)=>a+cleanMoney(x.amount),0);
+  const bySource = {};
+  for(const x of legacyRevenue){ const k=x.source||'other'; bySource[k]=(bySource[k]||0)+cleanMoney(x.amount); }
+  for(const x of ledgerRows.filter(x=>x.direction==='inflow')){ const k=x.source||x.entry_type||'other'; bySource[k]=(bySource[k]||0)+cleanMoney(x.amount); }
+  const byCategory = {};
+  for(const x of legacyExpenses){ const k=x.category||'other'; byCategory[k]=(byCategory[k]||0)+cleanMoney(x.amount); }
+  for(const x of ledgerRows.filter(x=>x.direction==='outflow')){ const k=x.category||x.entry_type||'other'; byCategory[k]=(byCategory[k]||0)+cleanMoney(x.amount); }
+  const annualMonths={};
+  for(let i=0;i<12;i++){
+    const d=new Date(new Date().getFullYear(),i,1); const k=d.toISOString().slice(0,7);
+    annualMonths[k]={month:k,inflow:0,outflow:0,net:0};
+  }
+  for(const x of legacyRevenue){ const k=String(x.occurred_at||'').slice(0,7); if(annualMonths[k]) annualMonths[k].inflow += cleanMoney(x.amount); }
+  for(const x of legacyExpenses.filter(x=>['approved','paid'].includes(x.status))){ const k=String(x.paid_at||x.created_at||'').slice(0,7); if(annualMonths[k]) annualMonths[k].outflow += cleanMoney(x.amount); }
+  for(const x of ledgerRows.filter(x=>x.status!=='void')){ const k=String(x.occurred_at||'').slice(0,7); if(annualMonths[k]) x.direction==='inflow'?annualMonths[k].inflow+=cleanMoney(x.amount):annualMonths[k].outflow+=cleanMoney(x.amount); }
+  Object.values(annualMonths).forEach(x=>x.net=x.inflow-x.outflow);
+  return {period:{start,end},accounts:accounts.data||[],ledger:ledgerRows,receivables:receivables.data||[],payables:payables.data||[],recurring:recurring.data||[],closes:closes.data||[],budgets:budgets.data||[],summary:{inflow,outflow,net,openAR,openAP,overdueAR,overdueAP,margin:inflow?net/inflow*100:0,bySource,byCategory,months:Object.values(annualMonths)}};
+}
+
+app.get('/api/admin/owner/finance/admin', admin, async (request,response)=>{
+  try { response.json({ok:true,generated_at:new Date().toISOString(),finance:await ownerFinanceAdminData(request.query.start,request.query.end)}); }
+  catch(error){ response.status(500).json({error:error.message}); }
+});
+
+app.post('/api/admin/owner/finance/ledger', admin, ownerWrite, async (request,response)=>{
+  try {
+    const b=request.body||{}, amount=cleanMoney(b.amount); if(amount<=0) throw new Error('amount harus > 0');
+    const direction=b.direction==='outflow'?'outflow':'inflow';
+    const status=OWNER_MONEY_STATUSES.includes(b.status)?b.status:'planned';
+    const row={direction,entry_type:cleanText(b.entry_type,80)||'other',source:cleanText(b.source,120)||null,category:cleanText(b.category,120)||null,account_id:cleanText(b.account_id,120)||null,cost_center_id:cleanText(b.cost_center_id,120)||null,counterparty:cleanText(b.counterparty,180)||null,description:cleanText(b.description,1000)||null,amount,tax_amount:Math.max(0,cleanMoney(b.tax_amount)),currency:cleanText(b.currency,10)||'IDR',status,occurred_at:isoDate(b.occurred_at,new Date().toISOString()),due_at:isoDate(b.due_at,null),settled_at:status==='settled'?isoDate(b.settled_at,new Date().toISOString()):null,recurring:Boolean(b.recurring),recurrence_rule:cleanText(b.recurrence_rule,120)||null,external_reference:cleanText(b.external_reference,180)||null,source_record_type:cleanText(b.source_record_type,80)||null,source_record_id:cleanText(b.source_record_id,120)||null,notes:cleanText(b.notes,2000)||null,created_by:request.user.id};
+    const {data,error}=await adminClient.from('owner_money_ledger').insert(row).select().single(); if(error) throw error;
+    await auditOwnerAction(request,'finance_ledger_created','owner_money_ledger',data.id,{direction,amount,entry_type:row.entry_type}); response.status(201).json(data);
+  }catch(error){response.status(400).json({error:error.message});}
+});
+
+app.patch('/api/admin/owner/finance/ledger/:id', admin, ownerWrite, async (request,response)=>{
+  try {
+    const b=request.body||{}, patch={updated_at:new Date().toISOString()};
+    for(const k of ['direction','entry_type','source','category','counterparty','description','currency','status','recurrence_rule','external_reference','source_record_type','notes']) if(b[k]!==undefined) patch[k]=cleanText(b[k],2000)||null;
+    for(const k of ['account_id','cost_center_id','source_record_id']) if(b[k]!==undefined) patch[k]=cleanText(b[k],120)||null;
+    if(b.amount!==undefined) patch.amount=cleanMoney(b.amount);
+    if(b.tax_amount!==undefined) patch.tax_amount=Math.max(0,cleanMoney(b.tax_amount));
+    if(b.occurred_at!==undefined) patch.occurred_at=isoDate(b.occurred_at,null);
+    if(b.due_at!==undefined) patch.due_at=isoDate(b.due_at,null);
+    if(b.settled_at!==undefined) patch.settled_at=isoDate(b.settled_at,null);
+    if(b.recurring!==undefined) patch.recurring=Boolean(b.recurring);
+    const {data,error}=await adminClient.from('owner_money_ledger').update(patch).eq('id',request.params.id).select().single(); if(error) throw error;
+    await auditOwnerAction(request,'finance_ledger_updated','owner_money_ledger',request.params.id,patch); response.json(data);
+  }catch(error){response.status(400).json({error:error.message});}
+});
+
+app.delete('/api/admin/owner/finance/ledger/:id', admin, ownerWrite, async (request,response)=>{
+  try { const {data,error}=await adminClient.from('owner_money_ledger').update({status:'void',updated_at:new Date().toISOString()}).eq('id',request.params.id).select().single(); if(error) throw error; await auditOwnerAction(request,'finance_ledger_voided','owner_money_ledger',request.params.id,{}); response.json(data); }
+  catch(error){response.status(400).json({error:error.message});}
+});
+
+app.post('/api/admin/owner/finance/account', admin, ownerWrite, async (request,response)=>{
+  try { const b=request.body||{}; const {data,error}=await adminClient.from('owner_money_accounts').insert({name:cleanText(b.name,160),account_type:cleanText(b.account_type,40)||'cash',currency:cleanText(b.currency,10)||'IDR',opening_balance:cleanMoney(b.opening_balance),notes:cleanText(b.notes,1000)||null,created_by:request.user.id}).select().single(); if(error) throw error; await auditOwnerAction(request,'finance_account_created','owner_money_account',data.id,{}); response.status(201).json(data); }
+  catch(error){response.status(400).json({error:error.message});}
+});
+
+app.patch('/api/admin/owner/finance/account/:id', admin, ownerWrite, async (request,response)=>{
+  try { const b=request.body||{}, patch={updated_at:new Date().toISOString()}; for(const k of ['name','account_type','currency','notes']) if(b[k]!==undefined) patch[k]=cleanText(b[k],500)||null; if(b.opening_balance!==undefined) patch.opening_balance=cleanMoney(b.opening_balance); if(b.active!==undefined) patch.active=Boolean(b.active); const {data,error}=await adminClient.from('owner_money_accounts').update(patch).eq('id',request.params.id).select().single(); if(error) throw error; await auditOwnerAction(request,'finance_account_updated','owner_money_account',request.params.id,patch); response.json(data); }
+  catch(error){response.status(400).json({error:error.message});}
+});
+
+app.post('/api/admin/owner/finance/receivable', admin, ownerWrite, async (request,response)=>{
+  try { const b=request.body||{}, amount=cleanMoney(b.amount); if(amount<=0) throw new Error('amount harus > 0'); const {data,error}=await adminClient.from('owner_money_receivables').insert({counterparty:cleanText(b.counterparty,180)||null,description:cleanText(b.description,500),source:cleanText(b.source,120)||null,invoice_number:cleanText(b.invoice_number,120)||null,amount,currency:cleanText(b.currency,10)||'IDR',issued_at:b.issued_at||new Date().toISOString().slice(0,10),due_at:b.due_at||null,status:OWNER_FIN_STATUSES.includes(b.status)?b.status:'open',expected_at:b.expected_at||null,received_at:b.received_at||null,external_reference:cleanText(b.external_reference,180)||null,notes:cleanText(b.notes,1000)||null,created_by:request.user.id}).select().single(); if(error) throw error; await auditOwnerAction(request,'finance_receivable_created','owner_money_receivable',data.id,{amount}); response.status(201).json(data); }
+  catch(error){response.status(400).json({error:error.message});}
+});
+
+app.post('/api/admin/owner/finance/payable', admin, ownerWrite, async (request,response)=>{
+  try { const b=request.body||{}, amount=cleanMoney(b.amount); if(amount<=0) throw new Error('amount harus > 0'); const {data,error}=await adminClient.from('owner_money_payables').insert({counterparty:cleanText(b.counterparty,180)||null,description:cleanText(b.description,500),category:cleanText(b.category,120)||'other',invoice_number:cleanText(b.invoice_number,120)||null,amount,currency:cleanText(b.currency,10)||'IDR',issued_at:b.issued_at||new Date().toISOString().slice(0,10),due_at:b.due_at||null,status:OWNER_FIN_STATUSES.includes(b.status)?b.status:'open',expected_at:b.expected_at||null,paid_at:b.paid_at||null,external_reference:cleanText(b.external_reference,180)||null,notes:cleanText(b.notes,1000)||null,created_by:request.user.id}).select().single(); if(error) throw error; await auditOwnerAction(request,'finance_payable_created','owner_money_payable',data.id,{amount}); response.status(201).json(data); }
+  catch(error){response.status(400).json({error:error.message});}
+});
+
+app.post('/api/admin/owner/finance/close-month', admin, ownerWrite, async (request,response)=>{
+  try {
+    const b=request.body||{}, month=String(b.period_month||'').slice(0,7); if(!/^\d{4}-\d{2}$/.test(month)) throw new Error('period_month format YYYY-MM');
+    const start=`${month}-01T00:00:00.000Z`; const d=new Date(start); d.setUTCMonth(d.getUTCMonth()+1); const end=d.toISOString();
+    const f=await ownerFinanceAdminData(start,end); const payload={period_month:`${month}-01`,status:'closed',revenue:f.summary.inflow,expense:f.summary.outflow,net:f.summary.net,notes:cleanText(b.notes,2000)||null,closed_by:request.user.id,closed_at:new Date().toISOString(),updated_at:new Date().toISOString()};
+    const {data,error}=await adminClient.from('owner_money_monthly_closes').upsert(payload,{onConflict:'period_month'}).select().single(); if(error) throw error; await auditOwnerAction(request,'finance_month_closed','owner_money_monthly_close',data.id,{month}); response.json(data);
+  }catch(error){response.status(400).json({error:error.message});}
+});
+
+app.get('/api/admin/owner/finance/report.csv', admin, async (request,response)=>{
+  try { const f=await ownerFinanceAdminData(request.query.start,request.query.end); const rows=[['Month','Inflow','Outflow','Net']]; for(const x of f.summary.months) rows.push([x.month,x.inflow,x.outflow,x.net]); rows.push(['TOTAL',f.summary.inflow,f.summary.outflow,f.summary.net]); response.setHeader('content-type','text/csv; charset=utf-8'); response.setHeader('content-disposition','attachment; filename="muda-owner-finance-report.csv"'); response.send(rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n')); }
+  catch(error){response.status(500).json({error:error.message});}
+});
+
+async function ownerMoneyIntelligence() {
+  const [snap, revenue, expenses, budgets, capital, wallets, payouts, ads, affiliate] = await Promise.all([
+    v14SafeQuery(()=>adminClient.from('owner_money_snapshot').select('*').maybeSingle()),
+    v14SafeQuery(()=>adminClient.from('revenue_entries').select('source,amount,currency,occurred_at,campaign_id,affiliate_offer_id').gte('occurred_at',new Date(Date.now()-30*86400000).toISOString()).order('occurred_at',{ascending:false}).limit(5000)),
+    v14SafeQuery(()=>adminClient.from('owner_expenses').select('id,category,vendor,description,amount,currency,status,due_at,paid_at,recurring,cost_center_id').order('created_at',{ascending:false}).limit(500)),
+    v14SafeQuery(()=>adminClient.from('owner_budgets').select('id,name,cost_center_id,period_start,period_end,amount,spent,status').eq('status','active').order('period_end',{ascending:true}).limit(100)),
+    v14SafeQuery(()=>adminClient.from('owner_capital_events').select('event_type,counterparty,amount,currency,occurred_at,notes').order('occurred_at',{ascending:false}).limit(200)),
+    v14SafeQuery(()=>adminClient.from('owner_wallet_summary').select('*').limit(100)),
+    v14SafeQuery(()=>adminClient.from('wallet_payouts').select('id,wallet_id,amount,currency,status,method,destination_label,requested_at,approved_at,paid_at').order('requested_at',{ascending:false}).limit(100)),
+    v14SafeQuery(()=>adminClient.from('ad_campaigns').select('id,title,advertiser_name,active,impressions,clicks,budget,spend,starts_at,ends_at,campaign_status').order('updated_at',{ascending:false}).limit(60)),
+    v14SafeQuery(()=>adminClient.from('affiliate_offers').select('id,title,partner_name,active,clicks,conversions,estimated_commission').order('updated_at',{ascending:false}).limit(60))
+  ]);
+  const rRows=revenue.data||[], eRows=expenses.data||[], bRows=budgets.data||[], cRows=capital.data||[];
+  const bySource={}; for(const r of rRows) bySource[r.source]=(bySource[r.source]||0)+Number(r.amount||0);
+  const revenue30=Number(snap.data?.revenue_30d||0), expenses30=Number(snap.data?.expenses_30d||0), upcoming=Number(snap.data?.upcoming_expenses_30d||0), cash=Number(snap.data?.available_cash||0);
+  const net30=revenue30-expenses30, avgDailyBurn=Math.max(expenses30/30,0), avgDailyRevenue=Math.max(revenue30/30,0);
+  const runway=avgDailyBurn>0?cash/(avgDailyBurn*30):null;
+  const margin=revenue30>0?(net30/revenue30)*100:null;
+  const adRows=ads.data||[], adBudget=adRows.reduce((a,x)=>a+Number(x.budget||0),0), adSpend=adRows.reduce((a,x)=>a+Number(x.spend||0),0), adClicks=adRows.reduce((a,x)=>a+Number(x.clicks||0),0), adImp=adRows.reduce((a,x)=>a+Number(x.impressions||0),0);
+  const affiliateRows=affiliate.data||[], affiliateExpected=affiliateRows.reduce((a,x)=>a+Number(x.estimated_commission||0)*Number(x.conversions||0),0);
+  const dueSoon=eRows.filter(x=>x.status==='planned'||x.status==='approved').reduce((a,x)=>a+Number(x.amount||0),0);
+  const budgetUtil=bRows.map(b=>({...b,utilization:Number(b.amount)>0?(Number(b.spent||0)/Number(b.amount))*100:0,variance:Number(b.amount||0)-Number(b.spent||0)})).sort((a,b)=>b.utilization-a.utilization);
+  const decisions=[];
+  if (runway!==null && runway<2) decisions.push({severity:'critical',title:'Cash runway pendek',reason:`Runway kira-kira ${runway.toFixed(1)} bulan. Tahan pengeluaran discretionary dan prioritaskan penerimaan.`});
+  if (upcoming>cash*0.7 && cash>0) decisions.push({severity:'high',title:'Kewajiban 30 hari berat',reason:'Upcoming expenses mendekati sebagian besar cash tersedia. Review due date dan prioritas pembayaran.'});
+  if (revenue30>0 && margin<20) decisions.push({severity:'high',title:'Margin perlu perhatian',reason:`Margin 30 hari sekitar ${margin.toFixed(1)}%. Evaluasi cost center dan revenue mix.`});
+  if (adBudget>0 && adSpend/adBudget>0.85) decisions.push({severity:'medium',title:'Ad budget mendekati batas',reason:`Spend ${((adSpend/adBudget)*100).toFixed(1)}% dari budget kampanye aktif.`});
+  if (!decisions.length) decisions.push({severity:'low',title:'Cash position relatif terkendali',reason:'Tidak ada red flag utama dari cash, expense, atau budget signal yang tersedia.'});
+  return {
+    snapshot:snap.data||{}, revenue:{days30:revenue30,days7:Number(snap.data?.revenue_7d||0),days1:Number(snap.data?.revenue_1d||0),net30,margin,bySource,runRateMonth:revenue30,avgDailyRevenue},
+    cash:{available:cash,pending:Number(snap.data?.pending_cash||0),upcoming30d:upcoming,avgDailyBurn,runwayMonths:runway},
+    expenses:{paid30d:expenses30,rows:eRows.slice(0,80),dueSoon,byCategory:eRows.reduce((m,x)=>(m[x.category]=(m[x.category]||0)+Number(x.amount||0),m),{})},
+    budgets:budgetUtil,
+    capital:{rows:cRows.slice(0,50),in:Number(snap.data?.capital_in_ever||0),out:Number(snap.data?.capital_out_ever||0)},
+    wallets:wallets.data||[], payouts:payouts.data||[], ads:{rows:adRows,budget:adBudget,spend:adSpend,clicks:adClicks,impressions:adImp}, affiliate:{rows:affiliateRows,expectedCommission:affiliateExpected}, decisions
+  };
+}
+
+app.get('/api/admin/owner/money/cockpit', admin, async (_request,response)=>{
+  try { response.json({ok:true,generated_at:new Date().toISOString(),money:await ownerMoneyIntelligence()}); }
+  catch(error){ response.status(500).json({error:error.message}); }
+});
+
+app.post('/api/admin/owner/money/expense', admin, ownerWrite, async (request,response)=>{
+  try {
+    const b=request.body||{};
+    const amount=Number(b.amount)||0; if(amount<=0) throw new Error('amount harus > 0');
+    const row={cost_center_id:cleanText(b.cost_center_id,120)||null,category:['content','marketing','sales','technology','people','operations','tax','capital','fee','other'].includes(b.category)?b.category:'other',vendor:cleanText(b.vendor,180)||null,description:cleanText(b.description,1000)||null,amount,currency:cleanText(b.currency,10)||'IDR',status:['planned','approved','paid','cancelled'].includes(b.status)?b.status:'planned',due_at:b.due_at||null,paid_at:b.status==='paid'?(b.paid_at||new Date().toISOString()):null,recurring:Boolean(b.recurring),recurrence_rule:cleanText(b.recurrence_rule,160)||null,external_reference:cleanText(b.external_reference,180)||null,created_by:request.user.id};
+    const {data,error}=await adminClient.from('owner_expenses').insert(row).select().single(); if(error) throw error;
+    await auditOwnerAction(request,'money_expense_created','owner_expense',data.id,{amount,category:row.category,status:row.status}); response.status(201).json(data);
+  } catch(error){response.status(400).json({error:error.message});}
+});
+
+app.post('/api/admin/owner/money/revenue', admin, ownerWrite, async (request,response)=>{
+  try {
+    const b=request.body||{}, amount=Number(b.amount)||0; if(amount<=0) throw new Error('amount harus > 0');
+    const row={source:['adsense','direct_ad','sponsor','affiliate','video','subscription','other'].includes(b.source)?b.source:'other',amount,currency:cleanText(b.currency,10)||'IDR',occurred_at:b.occurred_at||new Date().toISOString(),content_type:cleanText(b.content_type,50)||null,content_id:cleanText(b.content_id,120)||null,campaign_id:cleanText(b.campaign_id,120)||null,affiliate_offer_id:cleanText(b.affiliate_offer_id,120)||null,notes:cleanText(b.notes,2000)||null};
+    const {data,error}=await adminClient.from('revenue_entries').insert(row).select().single(); if(error) throw error;
+    await auditOwnerAction(request,'money_revenue_recorded','revenue_entry',data.id,{amount,source:row.source}); response.status(201).json(data);
+  } catch(error){response.status(400).json({error:error.message});}
+});
+
+app.post('/api/admin/owner/money/budget', admin, ownerWrite, async (request,response)=>{
+  try {
+    const b=request.body||{}, amount=Number(b.amount)||0; if(amount<0) throw new Error('budget tidak valid');
+    const {data,error}=await adminClient.from('owner_budgets').insert({name:cleanText(b.name,180)||'Owner Budget',cost_center_id:cleanText(b.cost_center_id,120)||null,period_start:b.period_start,period_end:b.period_end,amount,status:'active',created_by:request.user.id}).select().single(); if(error) throw error;
+    await auditOwnerAction(request,'money_budget_created','owner_budget',data.id,{amount}); response.status(201).json(data);
+  } catch(error){response.status(400).json({error:error.message});}
+});
+
+app.get('/api/admin/owner/cockpit', admin, async (_request,response)=>{
+  try {
+    const [intelligence, _radar, overview, _briefing, timeline, _featuresQuery, goals, autonomy, commands, sources] = await Promise.all([
+      ownerDecisionBrief().then(async decision => ({
+        decision,
+        performance: await ownerPerformanceSnapshot(),
+        audience: await ownerAudienceBrief(),
+        revenue: await ownerRevenueForecast(),
+        radar: (await adminClient.from('articles').select('id,title,summary,views,likes,shares,published_at,created_at,category,intelligence_score,importance_score').order('published_at',{ascending:false,nullsLast:true}).limit(80)).data || []
+      })),
+      Promise.resolve(null),
+      v14SafeQuery(()=>adminClient.from('owner_tasks').select('id,title,priority,status,due_at').in('status',['open','in_progress']).order('priority',{ascending:false}).limit(10)),
+      Promise.resolve(null),
+      v14SafeQuery(()=>adminClient.from('audit_logs').select('id,action,resource_type,resource_id,created_at,metadata').order('created_at',{ascending:false}).limit(30)),
+      Promise.resolve(null),
+      v14SafeQuery(()=>adminClient.from('owner_goals').select('id,title,status,horizon,target_value,unit,updated_at,owner_goal_metrics(*)').eq('status','active').order('updated_at',{ascending:false}).limit(12)),
+      v14SafeQuery(()=>adminClient.from('owner_autonomy_policies').select('action_key,mode,enabled,max_risk,min_role').order('action_key').limit(30)),
+      v14SafeQuery(()=>adminClient.from('owner_commands').select('id,intent_key,status,risk_level,input_text,created_at').order('created_at',{ascending:false}).limit(24)),
+      v14SafeQuery(()=>adminClient.from('news_sources').select('id,name,url,status,failure_count,last_success_at,active').order('name').limit(60))
+    ]);
+    const brief = await ownerDecisionBrief().catch(()=>null);
+    const featuresDb = await v14SafeQuery(()=>adminClient.from('owner_feature_catalog').select('feature_key,area,capability,status,evidence,route,provider_dependency').order('area').order('feature_key'));
+    const featureMap=new Map((featuresDb.data||[]).map(x=>[x.feature_key,x]));
+    const featureRows = typeof OWNER_FEATURES_V14!=='undefined' ? OWNER_FEATURES_V14.map(x=>({...x,...(featureMap.get(x.key)||{})})) : (featuresDb.data||[]);
+    const counts=featureRows.reduce((m,x)=>(m[x.status]=(m[x.status]||0)+1,m),{});
+    const radarRows=(intelligence?.radar||[]).map(x=>({...x,owner_score:ownerScore(x)})).sort((a,b)=>b.owner_score-a.owner_score).slice(0,20);
+    response.json({ok:true,generated_at:new Date().toISOString(),intelligence:{...intelligence,decision:brief||intelligence.decision,radar:radarRows},tasks:overview.data||[],brief:await ownerDecisionBrief().then(x=>({brief:{headline:x.headline,decision_confidence:x.confidence,top_story:x.top_story,recommended_next_actions:(x.decisions||[]).slice(0,6)}})).catch(()=>null),timeline:(timeline.data||[]).map(x=>({at:x.created_at,type:'audit',title:x.action,detail:[x.resource_type,x.resource_id].filter(Boolean).join(' · '),risk:'normal'})),features:{total:featureRows.length,counts,features:featureRows},goals:goals.data||[],autonomy:autonomy.data||[],commands:commands.data||[],sources:sources.data||[],money:await ownerMoneyIntelligence()});
+  } catch(error){response.status(500).json({error:error.message});}
+});
+
+/* =========================================================
+   V14 — OWNER EVOLUTION LAYER
+   Goal-driven decisions, briefs, feature coverage, autonomy,
+   activity timeline, recommendation explainability and learning loop.
+========================================================= */
+
+const OWNER_FEATURES_V14 = [
+  {key:'owner.copilot',area:'Owner',name:'Stateful Copilot',status:'enhanced'},
+  {key:'owner.context',area:'Owner',name:'Conversational Context',status:'enhanced'},
+  {key:'owner.planner',area:'Owner',name:'Multi-step Action Planner',status:'active'},
+  {key:'owner.dry_run',area:'Owner',name:'Dry Run / Scenario Preview',status:'enhanced'},
+  {key:'owner.undo',area:'Owner',name:'Undo / Rollback',status:'active'},
+  {key:'owner.voice',area:'Owner',name:'Voice Command Bus',status:'active'},
+  {key:'owner.decision',area:'Decision',name:'Decision Stack',status:'enhanced'},
+  {key:'owner.goals',area:'Decision',name:'Goal-driven Owner Mode',status:'active'},
+  {key:'owner.what_if',area:'Decision',name:'What-if Simulator',status:'enhanced'},
+  {key:'owner.timeline',area:'Decision',name:'Universal Activity Timeline',status:'active'},
+  {key:'owner.briefs',area:'Decision',name:'Morning / Midday / Evening Briefs',status:'active'},
+  {key:'intelligence.story_opportunity',area:'Intelligence',name:'Story Opportunity Score',status:'enhanced'},
+  {key:'intelligence.event_radar',area:'Intelligence',name:'Event Acceleration Radar',status:'active'},
+  {key:'intelligence.explainability',area:'Intelligence',name:'Recommendation WHY',status:'foundation'},
+  {key:'intelligence.learning',area:'Intelligence',name:'Outcome Feedback Loop',status:'foundation'},
+  {key:'newsroom.publish_now',area:'Newsroom',name:'What Should I Publish Now?',status:'enhanced'},
+  {key:'newsroom.quality_gate',area:'Newsroom',name:'Quality Gate',status:'foundation'},
+  {key:'homepage.autopilot',area:'Distribution',name:'Homepage Autopilot',status:'foundation'},
+  {key:'homepage.what_if',area:'Distribution',name:'Homepage What-if',status:'enhanced'},
+  {key:'audience.demand',area:'Audience',name:'Demand Intelligence',status:'enhanced'},
+  {key:'money.forecast',area:'Money',name:'Revenue Forecast',status:'enhanced'},
+  {key:'ops.self_heal',area:'Operations',name:'Self-healing Loop',status:'foundation'},
+  {key:'ops.incident',area:'Operations',name:'Incident Commander',status:'active'},
+  {key:'ops.source_intel',area:'Operations',name:'Source Intelligence',status:'enhanced'},
+  {key:'governance.autonomy',area:'Governance',name:'Autonomy Policy',status:'active'},
+  {key:'governance.audit',area:'Governance',name:'Audit + Verification',status:'active'},
+  {key:'evolution.learning',area:'Evolution',name:'Recommend → Execute → Learn',status:'foundation'},
+  {key:'distribution.social',area:'Distribution',name:'Share / Multi-platform UI',status:'active'},
+  {key:'media.video',area:'Media',name:'Private video + signed URLs',status:'active'},
+  {key:'seo.schema',area:'SEO',name:'NewsArticle / VideoObject / canonical',status:'active'},
+  {key:'community.moderation',area:'Audience',name:'Community moderation + reputation',status:'active'},
+  {key:'money.wallet',area:'Money',name:'Internal wallet + reconciliation',status:'active'},
+  {key:'money.cashflow',area:'Money',name:'Cashflow + runway intelligence',status:'enhanced'},
+  {key:'money.expenses',area:'Money',name:'Expense / outflow control',status:'active'},
+  {key:'money.budgets',area:'Money',name:'Budget guard + variance',status:'active'},
+  {key:'money.capital',area:'Money',name:'Capital / owner funding ledger',status:'active'},
+  {key:'money.attribution',area:'Money',name:'Revenue source attribution',status:'enhanced'},
+  {key:'money.ad_yield',area:'Money',name:'Ad inventory / campaign yield',status:'enhanced'},
+  {key:'ads.campaigns',area:'Money',name:'Ad campaign control',status:'foundation'},
+  {key:'automation.rules',area:'Operations',name:'Automation / scheduler / run log',status:'active'},
+  {key:'security.roles',area:'Governance',name:'Role + risk + session control',status:'active'},
+  {key:'provider.honesty',area:'Governance',name:'Provider honest-state registry',status:'active'}
+];
+
+const v14SafeQuery = async (builderFactory, fallback = []) => {
+  try {
+    const result = await builderFactory();
+    if (result.error) return {data:fallback,error:result.error};
+    return {data:result.data || fallback,error:null};
+  } catch (error) {
+    return {data:fallback,error};
+  }
+};
+
+app.get('/api/admin/owner/briefing', admin, async (request,response)=>{
+  try {
+    const [intel,commands,alerts,tasks,goals] = await Promise.all([
+      ownerDecisionBrief(),
+      adminClient.from('owner_commands').select('id,intent_key,status,risk_level,input_text,created_at').order('created_at',{ascending:false}).limit(12),
+      adminClient.from('owner_alerts').select('id,title,severity,status,created_at').eq('status','open').order('created_at',{ascending:false}).limit(8),
+      adminClient.from('owner_tasks').select('id,title,priority,status,due_at').in('status',['open','in_progress']).order('priority',{ascending:false}).limit(8),
+      adminClient.from('owner_goals').select('id,title,status,horizon,target_value,unit,updated_at').eq('status','active').order('updated_at',{ascending:false}).limit(6)
+    ]);
+    const degraded=intel.degraded_sources||[];
+    const story=intel.top_story;
+    const brief={
+      generated_at:new Date().toISOString(),
+      headline:intel.headline,
+      decision_confidence:intel.confidence,
+      top_story:story ? {id:story.id,title:story.title,score:story.owner_score} : null,
+      risks:degraded.slice(0,5),
+      alerts:alerts.data||[],
+      tasks:tasks.data||[],
+      goals:goals.data||[],
+      command_activity:commands.data||[],
+      recommended_next_actions:(intel.decisions||[]).slice(0,5),
+      briefing_questions:['Apa yang paling penting sekarang?','Apa yang sebaiknya dipublikasikan?','Apa yang berisiko hari ini?','Bagaimana performa dan revenue bergerak?']
+    };
+    response.json({ok:true,brief});
+  } catch(error){response.status(500).json({error:error.message});}
+});
+
+app.get('/api/admin/owner/timeline', admin, async (request,response)=>{
+  try {
+    const [a,c,o,u,r] = await Promise.all([
+      adminClient.from('audit_logs').select('id,actor_id,actor_role,action,resource_type,resource_id,metadata,created_at').order('created_at',{ascending:false}).limit(40),
+      adminClient.from('owner_commands').select('id,actor_id,intent_key,status,risk_level,input_text,result,error_text,created_at,finished_at').order('created_at',{ascending:false}).limit(40),
+      adminClient.from('owner_action_undo').select('id,command_id,action_key,resource_type,resource_id,status,expires_at,created_at').order('created_at',{ascending:false}).limit(25),
+      adminClient.from('owner_decision_outcomes').select('id,action_key,resource_type,resource_id,accepted,outcome_score,notes,created_at').order('created_at',{ascending:false}).limit(25),
+      adminClient.from('owner_daily_briefs').select('id,brief_date,brief_type,created_at').order('created_at',{ascending:false}).limit(10)
+    ]);
+    const events=[];
+    (a.data||[]).forEach(x=>events.push({at:x.created_at,type:'audit',title:x.action,detail:[x.resource_type,x.resource_id].filter(Boolean).join(' · '),risk:'normal',payload:x}));
+    (c.data||[]).forEach(x=>events.push({at:x.created_at,type:'command',title:x.intent_key,detail:x.input_text||'',risk:x.risk_level||'low',payload:x}));
+    (o.data||[]).forEach(x=>events.push({at:x.created_at,type:'undo',title:`Undo ${x.action_key}`,detail:x.resource_type||'',risk:'controlled',payload:x}));
+    (u.data||[]).forEach(x=>events.push({at:x.created_at,type:'outcome',title:`Outcome ${x.action_key}`,detail:x.accepted===false?'rejected':'observed',risk:'learning',payload:x}));
+    (r.data||[]).forEach(x=>events.push({at:x.created_at,type:'brief',title:`${x.brief_type} brief`,detail:String(x.brief_date),risk:'briefing',payload:x}));
+    events.sort((x,y)=>new Date(y.at)-new Date(x.at));
+    response.json({ok:true,events:events.slice(0,90)});
+  } catch(error){response.status(500).json({error:error.message});}
+});
+
+app.get('/api/admin/owner/features', admin, async (_request,response)=>{
+  const db = await v14SafeQuery(()=>adminClient.from('owner_feature_catalog').select('feature_key,area,capability,status,evidence,route,provider_dependency').order('area').order('feature_key'));
+  const dbMap=new Map((db.data||[]).map(x=>[x.feature_key,x]));
+  const features=OWNER_FEATURES_V14.map(x=>({...x,...(dbMap.get(x.key)||{})}));
+  const counts=features.reduce((m,x)=>(m[x.status]=(m[x.status]||0)+1,m),{});
+  response.json({ok:true,generated_at:new Date().toISOString(),total:features.length,counts,features});
+});
+
+app.get('/api/admin/owner/recommendations', admin, async (_request,response)=>{
+  try {
+    const [insights,stories] = await Promise.all([
+      adminClient.from('owner_insights').select('id,insight_type,priority,title,reason,confidence,action_key,resource_type,resource_id,status,payload,expires_at,created_at').eq('status','open').order('priority',{ascending:false}).limit(20),
+      adminClient.from('recommendation_explanations').select('id,content_type,content_id,score,factors,reason,segment_key,generated_at').order('generated_at',{ascending:false}).limit(20)
+    ]);
+    if(insights.error) throw insights.error; if(stories.error) throw stories.error;
+    response.json({ok:true,recommendations:insights.data||[],explanations:stories.data||[]});
+  } catch(error){response.status(500).json({error:error.message});}
+});
+
+app.get('/api/admin/owner/autonomy', admin, async (_request,response)=>{
+  try {
+    const {data,error}=await adminClient.from('owner_autonomy_policies').select('*').order('mode').order('action_key');
+    if(error) throw error;
+    response.json({ok:true,policies:data||[]});
+  } catch(error){response.status(500).json({error:error.message});}
+});
+
+app.patch('/api/admin/owner/autonomy/:action_key', admin, ownerWrite, async (request,response)=>{
+  try {
+    const mode=['assisted','semi_auto','auto'].includes(request.body?.mode)?request.body.mode:'assisted';
+    const enabled=request.body?.enabled===undefined?true:Boolean(request.body.enabled);
+    const maxRisk=['low','medium','high','critical'].includes(request.body?.max_risk)?request.body.max_risk:'low';
+    const minRole=['admin','owner','super_admin'].includes(request.body?.min_role)?request.body.min_role:'owner';
+    const {data,error}=await adminClient.from('owner_autonomy_policies').upsert({action_key:request.params.action_key,mode,enabled,max_risk:maxRisk,min_role:minRole,updated_at:new Date().toISOString()},{onConflict:'action_key'}).select().single();
+    if(error) throw error;
+    await auditOwnerAction(request,'owner_autonomy_policy_updated','owner_autonomy_policy',data.id,{action_key:request.params.action_key,mode,enabled,max_risk:maxRisk,min_role:minRole});
+    response.json({ok:true,policy:data});
+  } catch(error){response.status(400).json({error:error.message});}
+});
+
+app.get('/api/admin/owner/goals', admin, async (request,response)=>{
+  try {
+    const {data,error}=await adminClient.from('owner_goals').select('*,owner_goal_metrics(*)').eq('status','active').order('updated_at',{ascending:false}).limit(20);
+    if(error) throw error;
+    response.json({ok:true,goals:data||[]});
+  } catch(error){response.status(500).json({error:error.message});}
+});
+
+app.post('/api/admin/owner/goals', admin, ownerWrite, async (request,response)=>{
+  try {
+    const title=cleanText(request.body?.title,200); if(!title) return response.status(400).json({error:'Judul goal wajib'});
+    const {data,error}=await adminClient.from('owner_goals').insert({actor_id:request.user?.id||null,title,objective:request.body?.objective||{},horizon:cleanText(request.body?.horizon,80)||null,target_value:Number(request.body?.target_value)||null,unit:cleanText(request.body?.unit,40)||null,status:'active'}).select().single();
+    if(error) throw error;
+    await auditOwnerAction(request,'owner_goal_created','owner_goal',data.id,{title,horizon:data.horizon,target_value:data.target_value,unit:data.unit});
+    response.status(201).json({ok:true,goal:data});
+  } catch(error){response.status(400).json({error:error.message});}
+});
+
+app.post('/api/admin/owner/outcomes', admin, ownerWrite, async (request,response)=>{
+  try {
+    const {data,error}=await adminClient.from('owner_decision_outcomes').insert({insight_id:request.body?.insight_id||null,command_id:request.body?.command_id||null,action_key:cleanText(request.body?.action_key,140)||null,resource_type:cleanText(request.body?.resource_type,80)||null,resource_id:cleanText(request.body?.resource_id,140)||null,accepted:request.body?.accepted===undefined?true:Boolean(request.body.accepted),outcome_score:Number(request.body?.outcome_score)||null,notes:cleanText(request.body?.notes,2000)||null,before_metrics:request.body?.before_metrics||{},after_metrics:request.body?.after_metrics||{}}).select().single();
+    if(error) throw error;
+    response.status(201).json({ok:true,outcome:data});
+  } catch(error){response.status(400).json({error:error.message});}
+});
+
+app.post('/api/admin/owner/briefing/generate', admin, ownerWrite, async (request,response)=>{
+  try {
+    const type=['morning','midday','evening','incident'].includes(request.body?.brief_type)?request.body.brief_type:'morning';
+    const [briefRes,decision]=await Promise.all([ownerDecisionBrief(),ownerRevenueForecast()]);
+    const payload={headline:briefRes.headline,confidence:briefRes.confidence,decisions:briefRes.decisions,top_story:briefRes.top_story,risks:briefRes.degraded_sources,alerts:briefRes.alerts,tasks:briefRes.tasks,revenue:decision,generated_by:'owner-evolution-engine'};
+    const {data,error}=await adminClient.from('owner_daily_briefs').upsert({brief_date:new Date().toISOString().slice(0,10),brief_type:type,payload,created_at:new Date().toISOString()},{onConflict:'brief_date,brief_type'}).select().single();
+    if(error) throw error;
+    response.json({ok:true,brief:data});
+  } catch(error){response.status(400).json({error:error.message});}
+});
+
 /* =========================================================
    404 HANDLER
 ========================================================= */
@@ -6848,6 +7336,243 @@ app.use(
       });
   }
 );
+
+
+/* =========================================================
+   MUDA V19 — ULTIMATE OWNER CONTROL PLANE
+   Canonical money, finance administration, media intelligence,
+   reconciliation, scenario/decision support and richer cockpit.
+========================================================= */
+
+const v19MoneySafe = async (queryFactory, fallback = []) => {
+  try {
+    const result = await queryFactory();
+    return result?.data || fallback;
+  } catch (_) {
+    return fallback;
+  }
+};
+
+const v19CsvEscape = value => {
+  const text = String(value ?? '');
+  return /[",\n]/.test(text) ? `"${text.replaceAll('"','""')}"` : text;
+};
+
+const v19CanonicalMoney = async (startDate = new Date(Date.now()-30*86400000), endDate = new Date()) => {
+  const start = startDate instanceof Date ? startDate.toISOString() : new Date(startDate).toISOString();
+  const end = endDate instanceof Date ? endDate.toISOString() : new Date(endDate).toISOString();
+  const ledger = await v19MoneySafe(() => adminClient.from('owner_money_ledger')
+    .select('id,direction,entry_type,source,category,account_id,cost_center_id,counterparty,description,amount,tax_amount,currency,status,occurred_at,due_at,settled_at,recurring,external_reference,source_system,source_record_type,source_record_id,reconciled,reconciliation_status')
+    .gte('occurred_at', start).lte('occurred_at', end)
+    .order('occurred_at',{ascending:false}).limit(10000));
+  const inflow = ledger.filter(x => x.direction === 'inflow' && x.status !== 'void').reduce((a,x)=>a+Number(x.amount||0),0);
+  const outflow = ledger.filter(x => x.direction === 'outflow' && x.status !== 'void').reduce((a,x)=>a+Number(x.amount||0),0);
+  return { rows:ledger, inflow, outflow, net:inflow-outflow };
+};
+
+const v19FinanceAdmin = async () => {
+  const [ledger,accounts,receivables,payables,recurring,closes,checks,costCenters,budgets,capital] = await Promise.all([
+    v19MoneySafe(() => adminClient.from('owner_money_ledger').select('*').order('occurred_at',{ascending:false}).limit(500)),
+    v19MoneySafe(() => adminClient.from('owner_money_accounts').select('*').order('name')),
+    v19MoneySafe(() => adminClient.from('owner_money_receivables').select('*').order('due_at',{ascending:true}).limit(500)),
+    v19MoneySafe(() => adminClient.from('owner_money_payables').select('*').order('due_at',{ascending:true}).limit(500)),
+    v19MoneySafe(() => adminClient.from('owner_money_recurring_rules').select('*').order('next_run',{ascending:true}).limit(300)),
+    v19MoneySafe(() => adminClient.from('owner_money_monthly_closes').select('*').order('period_month',{ascending:false}).limit(24)),
+    v19MoneySafe(() => adminClient.from('owner_finance_close_checks').select('*').order('period_month',{ascending:false}).order('check_key').limit(300)),
+    v19MoneySafe(() => adminClient.from('owner_cost_centers').select('*').order('name')),
+    v19MoneySafe(() => adminClient.from('owner_budgets').select('*').order('period_end',{ascending:true}).limit(200)),
+    v19MoneySafe(() => adminClient.from('owner_capital_events').select('*').order('occurred_at',{ascending:false}).limit(200))
+  ]);
+  const today = new Date();
+  const overdueReceivables = receivables.filter(x => ['open','partial','overdue'].includes(x.status) && x.due_at && new Date(x.due_at) < today);
+  const overduePayables = payables.filter(x => ['open','partial','overdue'].includes(x.status) && x.due_at && new Date(x.due_at) < today);
+  const next30 = new Date(Date.now()+30*86400000);
+  const upcomingPayables = payables.filter(x => ['open','partial','overdue'].includes(x.status) && x.due_at && new Date(x.due_at) <= next30);
+  const upcomingReceivables = receivables.filter(x => ['open','partial','overdue'].includes(x.status) && x.due_at && new Date(x.due_at) <= next30);
+  return {
+    ledger, accounts, receivables, payables, recurring, closes, checks, costCenters, budgets, capital,
+    overdueReceivables, overduePayables, upcomingPayables, upcomingReceivables,
+    totals:{
+      receivableOpen:receivables.filter(x=>['open','partial','overdue'].includes(x.status)).reduce((a,x)=>a+Number(x.amount||0),0),
+      payableOpen:payables.filter(x=>['open','partial','overdue'].includes(x.status)).reduce((a,x)=>a+Number(x.amount||0),0),
+      receivableOverdue:overdueReceivables.reduce((a,x)=>a+Number(x.amount||0),0),
+      payableOverdue:overduePayables.reduce((a,x)=>a+Number(x.amount||0),0),
+      upcomingPayables:upcomingPayables.reduce((a,x)=>a+Number(x.amount||0),0),
+      upcomingReceivables:upcomingReceivables.reduce((a,x)=>a+Number(x.amount||0),0)
+    }
+  };
+};
+
+const v19MediaIntelligence = async () => {
+  const [articles,videos,events,breaking,ads,analytics] = await Promise.all([
+    v19MoneySafe(() => adminClient.from('articles').select('id,title,status,views,likes,shares,published_at,created_at,category,intelligence_score,importance_score,is_featured').order('published_at',{ascending:false,nullsLast:true}).limit(400)),
+    v19MoneySafe(() => adminClient.from('videos').select('*').order('created_at',{ascending:false}).limit(300)),
+    v19MoneySafe(() => adminClient.from('news_events').select('*').order('last_seen_at',{ascending:false}).limit(100)),
+    v19MoneySafe(() => adminClient.from('breaking_news').select('*').eq('active',true).order('created_at',{ascending:false}).limit(100)),
+    v19MoneySafe(() => adminClient.from('ad_campaigns').select('*').order('updated_at',{ascending:false}).limit(100)),
+    v19MoneySafe(() => adminClient.from('analytics_events').select('event_type,created_at,content_id').gte('created_at',new Date(Date.now()-86400000).toISOString()).limit(10000))
+  ]);
+  const rank = row => {
+    const views=Number(row.views||0), likes=Number(row.likes||0), shares=Number(row.shares||0);
+    const intel=Number(row.intelligence_score||0), importance=Number(row.importance_score||0);
+    const ageHours=Math.max(0,(Date.now()-new Date(row.published_at||row.created_at||Date.now()).getTime())/3600000);
+    const freshness=Math.max(0,100-ageHours*4);
+    return Math.max(0,Math.min(100,Math.round(freshness*0.25 + Math.min(100,Math.log10(views+1)*25)*0.25 + Math.min(100,(likes+shares)*3)*0.15 + intel*0.2 + importance*0.15)));
+  };
+  const rankedArticles=articles.map(x=>({...x,owner_score:rank(x)})).sort((a,b)=>b.owner_score-a.owner_score);
+  const analyticsByType=analytics.reduce((m,x)=>(m[x.event_type]=(m[x.event_type]||0)+1,m),{});
+  const videoStats={total:videos.length,published:videos.filter(v=>['published','public'].includes(String(v.status||v.visibility||'').toLowerCase())).length};
+  const articleStats={total:articles.length,published:articles.filter(a=>String(a.status||'').toLowerCase()==='published').length,views:articles.reduce((a,x)=>a+Number(x.views||0),0),likes:articles.reduce((a,x)=>a+Number(x.likes||0),0),shares:articles.reduce((a,x)=>a+Number(x.shares||0),0)};
+  const adStats={budget:ads.reduce((a,x)=>a+Number(x.budget||0),0),spend:ads.reduce((a,x)=>a+Number(x.spend||0),0),impressions:ads.reduce((a,x)=>a+Number(x.impressions||0),0),clicks:ads.reduce((a,x)=>a+Number(x.clicks||0),0)};
+  return {articles:rankedArticles.slice(0,40),videos:videos.slice(0,40),events,breaking,analyticsByType,articleStats,videoStats,adStats,topStory:rankedArticles[0]||null};
+};
+
+const v19OwnerUltimateCockpit = async () => {
+  const [core,finance,media,providers,commands,tasks,alerts,goals,autonomy,timeline] = await Promise.all([
+    adminClient.from('owner_alerts').select('id,severity,title,source,created_at,status').eq('status','open').order('created_at',{ascending:false}).limit(20),
+    v19FinanceAdmin(),
+    v19MediaIntelligence(),
+    v19MoneySafe(() => adminClient.from('integration_providers').select('*').order('provider_key')),
+    v19MoneySafe(() => adminClient.from('owner_commands').select('id,intent_key,status,risk_level,input_text,created_at,finished_at,result,error_text').order('created_at',{ascending:false}).limit(50)),
+    v19MoneySafe(() => adminClient.from('owner_tasks').select('*').in('status',['open','pending','in_progress']).order('priority',{ascending:false}).limit(30)),
+    v19MoneySafe(() => adminClient.from('owner_alerts').select('*').eq('status','open').order('severity').order('created_at',{ascending:false}).limit(30)),
+    v19MoneySafe(() => adminClient.from('owner_goals').select('id,title,status,horizon,target_value,unit,updated_at,owner_goal_metrics(*)').eq('status','active').order('updated_at',{ascending:false}).limit(20)),
+    v19MoneySafe(() => adminClient.from('owner_autonomy_policies').select('*').order('action_key').limit(100)),
+    v19MoneySafe(() => adminClient.from('audit_logs').select('id,action,resource_type,resource_id,created_at,metadata').order('created_at',{ascending:false}).limit(60))
+  ]);
+  const month = new Date(); month.setDate(1); month.setHours(0,0,0,0);
+  const monthRows=finance.ledger.filter(x => new Date(x.occurred_at)>=month && x.status!=='void');
+  const monthIn=monthRows.filter(x=>x.direction==='inflow').reduce((a,x)=>a+Number(x.amount||0),0);
+  const monthOut=monthRows.filter(x=>x.direction==='outflow').reduce((a,x)=>a+Number(x.amount||0),0);
+  const redFlags=[];
+  if(finance.totals.receivableOverdue>0) redFlags.push({severity:'high',title:'Piutang jatuh tempo',amount:finance.totals.receivableOverdue,action:'review_overdue_receivable'});
+  if(finance.totals.payableOverdue>0) redFlags.push({severity:'high',title:'Hutang jatuh tempo',amount:finance.totals.payableOverdue,action:'review_overdue_payable'});
+  if(media.adStats.budget>0 && media.adStats.spend/media.adStats.budget>0.9) redFlags.push({severity:'medium',title:'Budget iklan hampir habis',amount:media.adStats.spend,action:'review_ad_budget'});
+  if(media.breaking.length>0) redFlags.push({severity:'medium',title:`${media.breaking.length} breaking aktif`,action:'review_breaking'});
+  return {
+    generated_at:new Date().toISOString(),
+    headline:redFlags.length?`Owner memiliki ${redFlags.length} hal yang perlu diputuskan.`:'Kontrol Owner stabil; fokus berikutnya pada pertumbuhan, kualitas, dan monetisasi.',
+    core:{alerts:alerts||core.data||[],tasks,goals,autonomy,timeline},
+    media,
+    finance:{...finance,month:{inflow:monthIn,outflow:monthOut,net:monthIn-monthOut}},
+    providers,commands,redFlags,
+    decision:{topStory:media.topStory,confidence:Math.max(55,Math.min(97,100-redFlags.length*7)),recommended: redFlags.length?redFlags:[{severity:'low',title:'Naikkan monetisasi story terbaik',action:'analyze_top_story_revenue'}]}
+  };
+};
+
+app.get('/api/admin/owner/ultimate/cockpit', admin, async (_request,response)=>{
+  try { response.json(await v19OwnerUltimateCockpit()); }
+  catch(error){ response.status(500).json({error:error.message}); }
+});
+
+app.post('/api/admin/owner/finance/reconcile-legacy', admin, ownerWrite, async (request,response)=>{
+  try {
+    const [revenue, expenses] = await Promise.all([
+      v19MoneySafe(() => adminClient.from('revenue_entries').select('id,source,amount,currency,occurred_at,content_id,campaign_id,affiliate_offer_id,notes').limit(10000)),
+      v19MoneySafe(() => adminClient.from('owner_expenses').select('id,category,vendor,description,amount,currency,status,due_at,paid_at,external_reference,created_at').limit(10000))
+    ]);
+    let imported=0;
+    for(const r of revenue){
+      const key=`legacy:revenue:${r.id}`;
+      const {error}=await adminClient.from('owner_money_ledger').upsert({canonical_key:key,direction:'inflow',entry_type:'revenue',source:r.source||'other',category:'revenue',description:r.notes||'Legacy revenue entry',amount:Number(r.amount||0),currency:r.currency||'IDR',status:'settled',occurred_at:r.occurred_at||r.created_at,settled_at:r.occurred_at||r.created_at,source_system:'legacy_revenue_entries',source_record_type:'revenue_entry',source_record_id:r.id,reconciled:true,reconciliation_status:'matched',created_by:request.user.id},{onConflict:'canonical_key'});
+      if(!error) imported++;
+    }
+    for(const e of expenses){
+      const key=`legacy:expense:${e.id}`;
+      const {error}=await adminClient.from('owner_money_ledger').upsert({canonical_key:key,direction:'outflow',entry_type:'expense',source:'expense',category:e.category||'other',counterparty:e.vendor||null,description:e.description||'Legacy owner expense',amount:Number(e.amount||0),currency:e.currency||'IDR',status:e.status==='cancelled'?'void':(e.status==='paid'?'settled':'planned'),occurred_at:e.paid_at||e.due_at||e.created_at,settled_at:e.paid_at||null,due_at:e.due_at||null,external_reference:e.external_reference||null,source_system:'legacy_owner_expenses',source_record_type:'owner_expense',source_record_id:e.id,reconciled:true,reconciliation_status:'matched',created_by:request.user.id},{onConflict:'canonical_key'});
+      if(!error) imported++;
+    }
+    await auditOwnerAction(request,'finance_legacy_reconciled','owner_money_ledger',null,{imported});
+    response.json({ok:true,imported,message:'Legacy finance data mapped into canonical Owner ledger.'});
+  } catch(error){ response.status(400).json({error:error.message}); }
+});
+
+app.patch('/api/admin/owner/finance/receivable/:id', admin, ownerWrite, async (request,response)=>{
+  try {
+    const b=request.body||{};
+    const patch={};
+    for(const k of ['counterparty','description','source','invoice_number','currency','status','expected_at','received_at','external_reference','notes']) if(b[k]!==undefined) patch[k]=cleanText(b[k],1000)||null;
+    if(b.amount!==undefined) patch.amount=Number(b.amount)||0;
+    if(b.due_at!==undefined) patch.due_at=b.due_at||null;
+    const {data,error}=await adminClient.from('owner_money_receivables').update(patch).eq('id',request.params.id).select().single();
+    if(error) throw error; await auditOwnerAction(request,'finance_receivable_updated','owner_money_receivable',request.params.id,patch); response.json(data);
+  } catch(error){response.status(400).json({error:error.message});}
+});
+
+app.post('/api/admin/owner/finance/receivable/:id/payment', admin, ownerWrite, async (request,response)=>{
+  try {
+    const row=(await adminClient.from('owner_money_receivables').select('*').eq('id',request.params.id).single()).data;
+    if(!row) throw new Error('Receivable tidak ditemukan');
+    const amount=Math.max(0,Number(request.body?.amount)||0); if(amount<=0) throw new Error('amount harus > 0');
+    const newStatus = amount >= Number(row.amount||0) ? 'paid' : 'partial';
+    const patch={status:newStatus,received_at:newStatus==='paid'?(request.body?.received_at||new Date().toISOString().slice(0,10)):null};
+    const {data,error}=await adminClient.from('owner_money_receivables').update(patch).eq('id',row.id).select().single(); if(error) throw error;
+    const ledger={canonical_key:`receivable:${row.id}:${patch.received_at||new Date().toISOString()}:${amount}`,direction:'inflow',entry_type:'receivable_payment',source:row.source||'other',category:'receivable',counterparty:row.counterparty||null,description:`Payment ${row.description}`,amount,currency:row.currency||'IDR',status:'settled',occurred_at:new Date().toISOString(),settled_at:new Date().toISOString(),source_system:'finance_receivable',source_record_type:'owner_money_receivable',source_record_id:row.id,reconciled:true,reconciliation_status:'matched',created_by:request.user.id};
+    await adminClient.from('owner_money_ledger').upsert(ledger,{onConflict:'canonical_key'});
+    await auditOwnerAction(request,'finance_receivable_payment','owner_money_receivable',row.id,{amount,newStatus}); response.json(data);
+  } catch(error){response.status(400).json({error:error.message});}
+});
+
+app.patch('/api/admin/owner/finance/payable/:id', admin, ownerWrite, async (request,response)=>{
+  try {
+    const b=request.body||{}; const patch={};
+    for(const k of ['counterparty','description','category','invoice_number','currency','status','expected_at','paid_at','external_reference','notes']) if(b[k]!==undefined) patch[k]=cleanText(b[k],1000)||null;
+    if(b.amount!==undefined) patch.amount=Number(b.amount)||0; if(b.due_at!==undefined) patch.due_at=b.due_at||null;
+    const {data,error}=await adminClient.from('owner_money_payables').update(patch).eq('id',request.params.id).select().single(); if(error) throw error;
+    await auditOwnerAction(request,'finance_payable_updated','owner_money_payable',request.params.id,patch); response.json(data);
+  } catch(error){response.status(400).json({error:error.message});}
+});
+
+app.post('/api/admin/owner/finance/payable/:id/payment', admin, ownerWrite, async (request,response)=>{
+  try {
+    const row=(await adminClient.from('owner_money_payables').select('*').eq('id',request.params.id).single()).data; if(!row) throw new Error('Payable tidak ditemukan');
+    const amount=Math.max(0,Number(request.body?.amount)||0); if(amount<=0) throw new Error('amount harus > 0');
+    const newStatus=amount>=Number(row.amount||0)?'paid':'partial'; const paidAt=newStatus==='paid'?(request.body?.paid_at||new Date().toISOString()):null;
+    const {data,error}=await adminClient.from('owner_money_payables').update({status:newStatus,paid_at:paidAt}).eq('id',row.id).select().single(); if(error) throw error;
+    const ledger={canonical_key:`payable:${row.id}:${paidAt||new Date().toISOString()}:${amount}`,direction:'outflow',entry_type:'payable_payment',source:'payable',category:row.category||'other',counterparty:row.counterparty||null,description:`Payment ${row.description}`,amount,currency:row.currency||'IDR',status:'settled',occurred_at:new Date().toISOString(),settled_at:new Date().toISOString(),source_system:'finance_payable',source_record_type:'owner_money_payable',source_record_id:row.id,reconciled:true,reconciliation_status:'matched',created_by:request.user.id};
+    await adminClient.from('owner_money_ledger').upsert(ledger,{onConflict:'canonical_key'});
+    await auditOwnerAction(request,'finance_payable_payment','owner_money_payable',row.id,{amount,newStatus}); response.json(data);
+  } catch(error){response.status(400).json({error:error.message});}
+});
+
+app.get('/api/admin/owner/finance/recurring', admin, async (_request,response)=>{
+  const {data,error}=await adminClient.from('owner_money_recurring_rules').select('*').order('next_run',{ascending:true}); if(error) return response.status(500).json({error:error.message}); response.json(data||[]);
+});
+app.post('/api/admin/owner/finance/recurring', admin, ownerWrite, async (request,response)=>{
+  try { const b=request.body||{}; const row={name:cleanText(b.name,180)||'Recurring Rule',direction:b.direction==='inflow'?'inflow':'outflow',entry_type:cleanText(b.entry_type,80)||'other',source:cleanText(b.source,80)||null,category:cleanText(b.category,80)||null,amount:Number(b.amount)||0,currency:cleanText(b.currency,10)||'IDR',frequency:['weekly','monthly','quarterly','yearly'].includes(b.frequency)?b.frequency:'monthly',next_run:b.next_run||null,active:b.active!==false,account_id:b.account_id||null,notes:cleanText(b.notes,1000)||null,created_by:request.user.id}; if(row.amount<=0) throw new Error('amount harus > 0'); const {data,error}=await adminClient.from('owner_money_recurring_rules').insert(row).select().single(); if(error) throw error; await auditOwnerAction(request,'finance_recurring_created','owner_money_recurring_rule',data.id,row); response.status(201).json(data);} catch(error){response.status(400).json({error:error.message});}
+});
+app.patch('/api/admin/owner/finance/recurring/:id', admin, ownerWrite, async (request,response)=>{ try { const b=request.body||{}, patch={}; for(const k of ['name','direction','entry_type','source','category','currency','frequency','next_run','notes']) if(b[k]!==undefined) patch[k]=cleanText(b[k],500)||null; if(b.amount!==undefined) patch.amount=Number(b.amount)||0; if(b.active!==undefined) patch.active=Boolean(b.active); if(b.account_id!==undefined) patch.account_id=b.account_id||null; const {data,error}=await adminClient.from('owner_money_recurring_rules').update(patch).eq('id',request.params.id).select().single(); if(error) throw error; await auditOwnerAction(request,'finance_recurring_updated','owner_money_recurring_rule',request.params.id,patch); response.json(data);} catch(error){response.status(400).json({error:error.message});} });
+
+app.get('/api/admin/owner/finance/cost-centers', admin, async (_request,response)=>{const {data,error}=await adminClient.from('owner_cost_centers').select('*').order('name'); if(error) return response.status(500).json({error:error.message}); response.json(data||[]);});
+app.post('/api/admin/owner/finance/cost-centers', admin, ownerWrite, async (request,response)=>{try{const b=request.body||{},row={name:cleanText(b.name,180)||'Cost Center',kind:cleanText(b.kind,40)||'operating',active:b.active!==false,monthly_budget:Number(b.monthly_budget)||0};const {data,error}=await adminClient.from('owner_cost_centers').insert(row).select().single();if(error)throw error;await auditOwnerAction(request,'finance_cost_center_created','owner_cost_center',data.id,row);response.status(201).json(data);}catch(error){response.status(400).json({error:error.message});}});
+app.patch('/api/admin/owner/finance/cost-centers/:id', admin, ownerWrite, async (request,response)=>{try{const b=request.body||{},patch={};for(const k of ['name','kind'])if(b[k]!==undefined)patch[k]=cleanText(b[k],180)||null;if(b.active!==undefined)patch.active=Boolean(b.active);if(b.monthly_budget!==undefined)patch.monthly_budget=Number(b.monthly_budget)||0;const {data,error}=await adminClient.from('owner_cost_centers').update(patch).eq('id',request.params.id).select().single();if(error)throw error;await auditOwnerAction(request,'finance_cost_center_updated','owner_cost_center',request.params.id,patch);response.json(data);}catch(error){response.status(400).json({error:error.message});}});
+
+app.patch('/api/admin/owner/finance/budgets/:id', admin, ownerWrite, async (request,response)=>{try{const b=request.body||{},patch={};for(const k of ['name','period_start','period_end','status'])if(b[k]!==undefined)patch[k]=b[k];for(const k of ['amount','spent'])if(b[k]!==undefined)patch[k]=Number(b[k])||0;if(b.cost_center_id!==undefined)patch.cost_center_id=b.cost_center_id||null;const {data,error}=await adminClient.from('owner_budgets').update(patch).eq('id',request.params.id).select().single();if(error)throw error;await auditOwnerAction(request,'finance_budget_updated','owner_budget',request.params.id,patch);response.json(data);}catch(error){response.status(400).json({error:error.message});}});
+
+app.post('/api/admin/owner/finance/reconcile', admin, ownerWrite, async (request,response)=>{
+  try {
+    const start = request.body?.period_start || new Date(new Date().getFullYear(),new Date().getMonth(),1).toISOString().slice(0,10);
+    const end = request.body?.period_end || new Date(new Date().getFullYear(),new Date().getMonth()+1,0).toISOString().slice(0,10);
+    const canonical=await v19CanonicalMoney(new Date(`${start}T00:00:00Z`),new Date(`${end}T23:59:59Z`));
+    const recon={period_start:start,period_end:end,source_name:'owner_os',source_record_count:canonical.rows.length,canonical_record_count:canonical.rows.length,source_total_in:canonical.inflow,source_total_out:canonical.outflow,canonical_total_in:canonical.inflow,canonical_total_out:canonical.outflow,variance_in:0,variance_out:0,status:'matched',notes:'Canonical ledger self-reconciliation',created_by:request.user.id};
+    const {data,error}=await adminClient.from('owner_money_reconciliations').insert(recon).select().single();if(error)throw error;await adminClient.from('owner_money_ledger').update({reconciled:true,reconciliation_status:'matched'}).gte('occurred_at',`${start}T00:00:00Z`).lte('occurred_at',`${end}T23:59:59Z`);await auditOwnerAction(request,'finance_reconciled','owner_money_reconciliation',data.id,recon);response.json(data);
+  } catch(error){response.status(400).json({error:error.message});}
+});
+
+app.post('/api/admin/owner/finance/month/:period/reopen', admin, ownerWrite, async (request,response)=>{try{const period=request.params.period;const {data,error}=await adminClient.from('owner_money_monthly_closes').update({status:'reopened',closed_at:null,closed_by:null}).eq('period_month',period).select().single();if(error)throw error;await auditOwnerAction(request,'finance_month_reopened','owner_money_monthly_close',data.id,{period});response.json(data);}catch(error){response.status(400).json({error:error.message});}});
+
+app.get('/api/admin/owner/finance/report.csv', admin, async (request,response)=>{
+  try{
+    const start=request.query.from?new Date(request.query.from):new Date(Date.now()-365*86400000); const end=request.query.to?new Date(request.query.to):new Date(); const canonical=await v19CanonicalMoney(start,end);
+    const rows=[['Date','Direction','Type','Source','Category','Counterparty','Description','Amount','Tax','Currency','Status','Due','Settled','Reference','Reconciled']];
+    for(const x of canonical.rows) rows.push([x.occurred_at,x.direction,x.entry_type,x.source,x.category,x.counterparty,x.description,x.amount,x.tax_amount,x.currency,x.status,x.due_at,x.settled_at,x.external_reference,x.reconciled?'yes':'no']);
+    response.setHeader('Content-Type','text/csv; charset=utf-8'); response.setHeader('Content-Disposition',`attachment; filename="muda-owner-money-${start.toISOString().slice(0,10)}-${end.toISOString().slice(0,10)}.csv"`); response.send(rows.map(r=>r.map(v19CsvEscape).join(',')).join('\n'));
+  }catch(error){response.status(400).json({error:error.message});}
+});
+
+app.get('/api/admin/owner/media/cockpit', admin, async (_request,response)=>{try{response.json(await v19MediaIntelligence());}catch(error){response.status(500).json({error:error.message});}});
+
+app.post('/api/admin/owner/media/snapshot', admin, ownerWrite, async (request,response)=>{try{const m=await v19MediaIntelligence();const row={articles_total:m.articleStats.total,articles_published:m.articleStats.published,videos_total:m.videoStats.total,videos_published:m.videoStats.published,live_events:m.events.length,breaking_active:m.breaking.length,top_story_id:m.topStory?.id||null,article_views:m.articleStats.views||0,video_views:m.videos.reduce((a,x)=>a+Number(x.views||0),0),engagement_rate:m.articleStats.views?(((m.articleStats.likes+m.articleStats.shares)/m.articleStats.views)*100):0,notes:'Owner media snapshot',created_by:request.user.id};const {data,error}=await adminClient.from('owner_media_snapshots').insert(row).select().single();if(error)throw error;await auditOwnerAction(request,'owner_media_snapshot','owner_media_snapshot',data.id,row);response.status(201).json(data);}catch(error){response.status(400).json({error:error.message});}});
 
 /* =========================================================
    GLOBAL ERROR HANDLER
@@ -6900,7 +7625,7 @@ if (
     PORT,
     () => {
       console.log(
-        `BERITA MUDA INDONESIA V5.5.1 running on :${PORT}`
+        `MUDA OWNER INTELLIGENCE OS V14 running on :${PORT}`
       );
     }
   );
