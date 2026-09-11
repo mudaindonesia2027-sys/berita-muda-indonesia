@@ -6012,6 +6012,33 @@ const ownerScore = item => {
   return Math.round((Math.min(100, views / 1000) * 0.20 + engagement * 0.25 + freshnessScore * 0.20 + Math.min(100, intelligence) * 0.35) * 100) / 100;
 };
 
+
+app.get('/api/admin/owner/decision', admin, async (_request,response)=>{
+  try{response.json(await ownerDecisionBrief());}catch(error){response.status(500).json({error:error.message});}
+});
+app.get('/api/admin/owner/performance', admin, async (_request,response)=>{
+  try{response.json(await ownerPerformanceSnapshot());}catch(error){response.status(500).json({error:error.message});}
+});
+app.get('/api/admin/owner/audience', admin, async (_request,response)=>{
+  try{response.json(await ownerAudienceBrief());}catch(error){response.status(500).json({error:error.message});}
+});
+app.get('/api/admin/owner/revenue-forecast', admin, async (_request,response)=>{
+  try{response.json(await ownerRevenueForecast());}catch(error){response.status(500).json({error:error.message});}
+});
+app.post('/api/admin/sources/:id/test', admin, ownerWrite, async (request,response)=>{
+  try{const result=await testRssSource(request.params.id); await auditOwnerAction(request,'owner_source_test','news_source',request.params.id,{result}); response.json(result);}catch(error){response.status(400).json({error:error.message});}
+});
+app.get('/api/admin/owner/business-summary', admin, async (_request,response)=>{
+  try{
+    const [ads,affiliate,plans,members]=await Promise.all([
+      adminClient.from('ad_campaigns').select('id,title,active,impressions,clicks,budget,spend,starts_at,ends_at,campaign_status').order('updated_at',{ascending:false}).limit(30),
+      adminClient.from('affiliate_offers').select('id,title,partner_name,active,clicks,conversions,estimated_commission').order('updated_at',{ascending:false}).limit(30),
+      adminClient.from('membership_plans').select('id,name,price,currency,active').order('price',{ascending:true}).limit(20),
+      adminClient.from('user_memberships').select('id,status,plan_id,started_at,expires_at').order('started_at',{ascending:false}).limit(100)
+    ]);
+    response.json({ads:ads.data||[],affiliate:affiliate.data||[],membership_plans:plans.data||[],memberships:members.data||[]});
+  }catch(error){response.status(500).json({error:error.message});}
+});
 app.get('/api/admin/owner/overview', admin, async (request, response) => {
   try {
     const [stats, system, breaking, events, trends, alerts, tasks, providers, sources] = await Promise.all([
@@ -6391,7 +6418,11 @@ const executeOwnerAction = async (request,intentKey,payload={}) => {
   const def=await getOwnerActionDefinition(intentKey);
   ensureOwnerRole(request,def.min_role||'owner');
   if(!def.enabled) throw new Error('Action disabled');
-  if(intentKey==='sync_news') return executeRpc(request,intentKey,['run_sync_engine','run_sync','sync_news'],payload);
+  if(intentKey==='sync_news'){
+    const result=await syncFeeds();
+    await auditOwnerAction(request,'owner_command_sync_news','sync',null,{mode:'app_engine'},result);
+    return {ok:true,action:intentKey,result};
+  }
   if(intentKey==='run_breaking') return executeRpc(request,intentKey,['run_breaking_pipeline','run_breaking_news_engine'],payload);
   if(intentKey==='rebuild_intelligence') return executeRpc(request,intentKey,['rebuild_article_intelligence'],payload);
   if(intentKey==='rebuild_trending') return executeRpc(request,intentKey,['rebuild_trending'],payload);
@@ -6611,6 +6642,90 @@ const executeOwnerAction = async (request,intentKey,payload={}) => {
   }
   throw new Error(`Aksi ${intentKey} belum memiliki executor adapter`);
 };
+
+
+
+// V11 owner copilot helpers: same command bus for typed + voice channels.
+const createOwnerConversation = async (request, channel='dashboard', title=null) => {
+  const {data,error}=await adminClient.from('owner_conversations').insert({actor_id:request.user?.id||null,channel,title,context:{}}).select().single();
+  if(error) throw error;
+  return data;
+};
+
+const updateOwnerConversationContext = async (id, patch={}) => {
+  if(!id) return null;
+  const {data,error}=await adminClient.from('owner_conversations').update({...patch,updated_at:new Date().toISOString()}).eq('id',id).select().maybeSingle();
+  if(error) throw error;
+  return data;
+};
+
+const buildOwnerPlan = async (request,inputText) => {
+  const intent=normalizeOwnerIntent(inputText);
+  if(!intent) return {ok:false,error:'Perintah belum dikenali'};
+  const def=await getOwnerActionDefinition(intent);
+  ensureOwnerRole(request,def.min_role||'owner');
+  const plan={intent_key:intent,risk_level:def.risk_level||'low',confidence:0.82,requires_confirmation:Boolean(def.requires_confirmation)};
+  const {data:planRow,error:planError}=await adminClient.from('owner_action_plans').insert({actor_id:request.user?.id||null,input_text:cleanText(inputText,1200),objective:{intent_key:intent,display_name:def.display_name},risk_level:plan.risk_level,status:plan.requires_confirmation?'confirming':'planned',confidence:plan.confidence,dry_run:true}).select().single();
+  if(planError) throw planError;
+  const {data:step,error:stepError}=await adminClient.from('owner_action_plan_steps').insert({plan_id:planRow.id,step_no:1,action_key:intent,payload:{},risk_level:plan.risk_level,status:'pending'}).select().single();
+  if(stepError) throw stepError;
+  return {ok:true,plan_id:planRow.id,intent_key:intent,risk_level:plan.risk_level,confidence:plan.confidence,requires_confirmation:plan.requires_confirmation,steps:[step]};
+};
+
+app.get('/api/admin/owner/copilot/brief', admin, async (request,response)=>{
+  try {
+    const [insights,alerts,tasks,system]=await Promise.all([
+      adminClient.from('owner_insights').select('*').eq('status','open').order('priority',{ascending:false}).limit(12),
+      adminClient.from('owner_alerts').select('*').eq('status','open').order('created_at',{ascending:false}).limit(12),
+      adminClient.from('owner_tasks').select('*').in('status',['open','pending','in_progress']).order('priority',{ascending:false}).limit(12),
+      adminClient.from('news_sources').select('id,name,status,failure_count').neq('status','healthy').order('failure_count',{ascending:false}).limit(10)
+    ]);
+    response.json({ok:true,insights:insights.data||[],alerts:alerts.data||[],tasks:tasks.data||[],degraded_sources:system.data||[]});
+  } catch(error){ response.status(500).json({error:error.message}); }
+});
+
+app.post('/api/admin/owner/copilot/plan', admin, ownerWrite, async (request,response)=>{
+  try { const text=cleanText(request.body?.text,1200); if(!text) return response.status(400).json({error:'text wajib'}); response.json(await buildOwnerPlan(request,text)); }
+  catch(error){ response.status(400).json({error:error.message}); }
+});
+
+app.get('/api/admin/owner/copilot/plan/:id', admin, async (request,response)=>{
+  try {
+    const [plan,steps]=await Promise.all([
+      adminClient.from('owner_action_plans').select('*').eq('id',request.params.id).maybeSingle(),
+      adminClient.from('owner_action_plan_steps').select('*').eq('plan_id',request.params.id).order('step_no')
+    ]);
+    if(plan.error) throw plan.error; if(steps.error) throw steps.error; if(!plan.data) return response.status(404).json({error:'Plan tidak ditemukan'});
+    response.json({plan:plan.data,steps:steps.data||[]});
+  } catch(error){response.status(500).json({error:error.message});}
+});
+
+app.post('/api/admin/owner/conversations', admin, ownerWrite, async (request,response)=>{
+  try { response.status(201).json(await createOwnerConversation(request,cleanText(request.body?.channel,30)||'dashboard',cleanText(request.body?.title,160)||null)); }
+  catch(error){response.status(400).json({error:error.message});}
+});
+
+app.patch('/api/admin/owner/conversations/:id', admin, ownerWrite, async (request,response)=>{
+  try { response.json(await updateOwnerConversationContext(request.params.id,{context:request.body?.context||{},last_intent_key:cleanText(request.body?.last_intent_key,80)||null,last_resource_type:cleanText(request.body?.last_resource_type,80)||null,last_resource_id:cleanText(request.body?.last_resource_id,120)||null})); }
+  catch(error){response.status(400).json({error:error.message});}
+});
+
+app.get('/api/admin/owner/undo', admin, async (request,response)=>{
+  const {data,error}=await adminClient.from('owner_action_undo').select('*').eq('status','available').order('created_at',{ascending:false}).limit(50);
+  if(error) return response.status(500).json({error:error.message}); response.json(data||[]);
+});
+
+app.get('/api/admin/owner/voice/session', admin, async (request,response)=>{
+  const {data,error}=await adminClient.from('voice_sessions').select('*').eq('actor_id',request.user?.id||null).order('updated_at',{ascending:false}).limit(1).maybeSingle();
+  if(error) return response.status(500).json({error:error.message}); response.json(data||null);
+});
+
+app.post('/api/admin/owner/voice/session', admin, ownerWrite, async (request,response)=>{
+  try {
+    const {data,error}=await adminClient.from('voice_sessions').insert({actor_id:request.user?.id||null,locale:cleanText(request.body?.locale,20)||'id-ID',provider:cleanText(request.body?.provider,40)||'browser',status:cleanText(request.body?.status,30)||'processing',conversation_id:request.body?.conversation_id||null,last_transcript:cleanText(request.body?.transcript,1200)||null,last_response:cleanText(request.body?.response,3000)||null}).select().single();
+    if(error) throw error; response.status(201).json(data);
+  } catch(error){response.status(400).json({error:error.message});}
+});
 
 app.get('/api/admin/owner/command-actions', admin, async (_request,response)=>{
   const {data,error}=await adminClient.from('owner_action_registry').select('*').order('category').order('display_name');
