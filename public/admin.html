@@ -256,4 +256,6 @@ function seedTask(){openModal('Owner Task',`<div class="field"><label>Judul</lab
 async function createTask(){await api('/api/admin/tasks',{method:'POST',body:JSON.stringify({title:$('t_title').value,priority:Number($('t_pri').value),task_type:'manual'})});closeModal();refreshAll()}
 function toast(msg,bad=false){const d=document.createElement('div');d.textContent=msg;d.style.cssText='position:fixed;right:18px;bottom:18px;z-index:99;padding:12px 15px;border-radius:12px;border:1px solid '+(bad?'#9f4f57':'#2f7a5c')+';background:'+(bad?'#32141a':'#11291f')+';color:#fff;box-shadow:0 15px 40px rgba(0,0,0,.3)';document.body.appendChild(d);setTimeout(()=>d.remove(),2600)}
 </script>
+<script src="/admin-intelligence.js"></script>
+<script src="/voice-intelligence.js"></script>
 </body></html>
