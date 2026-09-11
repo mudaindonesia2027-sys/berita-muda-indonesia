@@ -1,120 +1,337 @@
-<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MUDA Indonesia — Owner Media Operating System</title><style>
-:root{--bg:#060b12;--bg2:#0a111b;--panel:#0d1622;--panel2:#111d2b;--line:#1e2d40;--line2:#29415b;--text:#f6f9fc;--muted:#91a0b3;--blue:#3b97ff;--cyan:#52d7ff;--green:#36d68c;--amber:#f4bd58;--red:#ff6575;--violet:#9b8cff;--shadow:0 20px 70px rgba(0,0,0,.32);--r:18px}
-*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:radial-gradient(900px 500px at 10% -10%,rgba(55,127,255,.15),transparent 60%),radial-gradient(700px 420px at 100% 0%,rgba(82,215,255,.09),transparent 60%),var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,input,select,textarea{font:inherit}button{cursor:pointer}.hidden{display:none!important}.shell{width:min(1560px,calc(100% - 34px));margin:auto}
-/* auth */
-.login{min-height:100vh;display:grid;place-items:center;padding:22px}.login-card{width:min(470px,100%);padding:32px;border:1px solid var(--line2);border-radius:26px;background:linear-gradient(180deg,rgba(16,29,45,.98),rgba(8,15,24,.98));box-shadow:var(--shadow)}.login-mark{display:flex;align-items:center;gap:12px;margin-bottom:22px}.login-logo{width:48px;height:48px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#1d73ff,#4fd6ff);font-weight:950}.brand{font-weight:950;letter-spacing:.08em}.brand span{color:#79dcff}.brand small{display:block;color:var(--muted);font-weight:600;letter-spacing:0;margin-top:5px;font-size:12px}.field{display:grid;gap:7px;margin:14px 0}.field label{font-size:11px;color:var(--muted);font-weight:750;text-transform:uppercase;letter-spacing:.08em}.field input,.field select,.field textarea{width:100%;padding:12px 13px;border-radius:12px;border:1px solid var(--line2);background:#07111c;color:var(--text);outline:none}.field input:focus,.field textarea:focus,.field select:focus{border-color:#3e97ff;box-shadow:0 0 0 3px rgba(59,151,255,.12)}.field textarea{min-height:120px;resize:vertical}
-/* buttons */
-button.primary,button.secondary,button.good,button.warn,button.danger{border-radius:11px;padding:10px 13px;font-weight:800;border:1px solid transparent;transition:.18s ease}button.primary{color:#fff;background:linear-gradient(135deg,#247dff,#41c7ff);box-shadow:0 8px 25px rgba(49,143,255,.2)}button.secondary{color:#dce8f5;background:#091522;border-color:var(--line2)}button.good{color:#aaf3cf;background:rgba(54,214,140,.1);border-color:rgba(54,214,140,.3)}button.warn{color:#ffe2a4;background:rgba(244,189,88,.09);border-color:rgba(244,189,88,.32)}button.danger{color:#ffb1b9;background:rgba(255,101,117,.08);border-color:rgba(255,101,117,.3)}button:hover{transform:translateY(-1px);filter:brightness(1.06)}button:disabled{opacity:.5;cursor:not-allowed;transform:none}
-/* top */
-.topbar{position:sticky;top:0;z-index:40;border-bottom:1px solid rgba(41,65,91,.65);background:rgba(5,10,18,.86);backdrop-filter:blur(20px)}.topbar-in{min-height:70px;display:flex;align-items:center;justify-content:space-between;gap:14px}.top-left{display:flex;align-items:center;gap:12px}.mark{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;background:linear-gradient(135deg,#1f76ff,#54dbff);font-weight:950}.top-title{font-size:13px;font-weight:900;letter-spacing:.08em}.top-title small{display:block;color:#8193a8;font-size:10px;letter-spacing:.12em;margin-top:3px}.identity{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:11px}.identity .email{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.pill{padding:5px 9px;border-radius:999px;border:1px solid var(--line2);font-size:9px;font-weight:900;letter-spacing:.05em}.pill.ok{color:#aaf3cf;border-color:rgba(54,214,140,.32);background:rgba(54,214,140,.07)}.pill.warn{color:#ffe2a4;border-color:rgba(244,189,88,.32);background:rgba(244,189,88,.07)}
-/* nav */
-.main{padding:18px 0 55px}.nav{display:flex;gap:5px;overflow:auto;padding:6px;position:sticky;top:70px;z-index:25;background:rgba(6,12,20,.82);backdrop-filter:blur(20px);border:1px solid rgba(41,65,91,.75);border-radius:16px;margin-bottom:16px}.nav button{border:1px solid transparent;background:transparent;color:#91a5ba;font-size:11px;font-weight:850;padding:10px 13px;border-radius:10px;white-space:nowrap}.nav button:hover{background:#0c1826;color:#eef7ff}.nav button.active{background:linear-gradient(135deg,#174b81,#0c2949);color:#fff;border-color:#2a6da8;box-shadow:inset 0 0 0 1px rgba(255,255,255,.035)}
-/* hero */
-.hero{display:grid;grid-template-columns:1.55fr .85fr;gap:16px;margin-bottom:15px}.hero-card{position:relative;overflow:hidden;padding:24px;border:1px solid var(--line2);border-radius:22px;background:linear-gradient(180deg,rgba(17,31,48,.97),rgba(8,16,26,.98));box-shadow:var(--shadow)}.hero-card:after{content:"";position:absolute;right:-120px;top:-120px;width:330px;height:330px;border-radius:50%;background:radial-gradient(circle,rgba(49,145,255,.2),transparent 65%);pointer-events:none}.eyebrow{display:flex;align-items:center;gap:7px;color:#70ddff;font-size:10px;font-weight:900;letter-spacing:.14em}.hero h1{margin:10px 0 10px;font-size:clamp(27px,3vw,46px);line-height:1.02;letter-spacing:-.035em;max-width:900px}.hero p{margin:0;color:#a5b5c7;font-size:13px;line-height:1.68;max-width:860px}.hero-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px}.hero-status{display:flex;align-items:center;gap:8px;margin-top:17px;color:#8fa3b9;font-size:11px}.pulse{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 6px rgba(54,214,140,.08)}.hero-side-head{display:flex;justify-content:space-between;align-items:center;gap:8px}.score{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:13px}.score-box{padding:16px;border:1px solid #20354c;border-radius:15px;background:linear-gradient(180deg,#101e2f,#0a1522)}.score-box small{color:#8295aa;font-size:10px;text-transform:uppercase;letter-spacing:.1em}.score-box .num{margin-top:6px;font-size:28px;font-weight:950;letter-spacing:-.03em}
-/* intelligence */
-.intel-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:15px}.intel-card{padding:13px 14px;border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,#0c1723,#09131e);min-height:76px;cursor:pointer;transition:.18s ease}.intel-card:hover{transform:translateY(-2px);border-color:#2f628e;background:#0d1a28}.intel-card .k{font-size:10px;color:#8397ad;text-transform:uppercase;letter-spacing:.08em}.intel-card .v{display:flex;align-items:center;justify-content:space-between;margin-top:6px;font-size:14px;font-weight:900}.mini-dot{width:7px;height:7px;border-radius:50%;background:var(--green)}
-/* sections */
-.section-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:11px}.section-head h2{margin:0;font-size:17px;letter-spacing:-.015em}.section-head p{margin:4px 0 0;color:#8294a9;font-size:11px;line-height:1.5}.panel{padding:16px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(180deg,rgba(13,24,38,.97),rgba(8,16,26,.96));box-shadow:0 14px 45px rgba(0,0,0,.14)}.grid-2{display:grid;grid-template-columns:1.15fr .85fr;gap:14px}.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.metric{padding:14px;border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,#0d1a29,#091421)}.metric span{display:block;color:#7f93a9;font-size:9px;text-transform:uppercase;letter-spacing:.1em}.metric b{display:block;margin-top:6px;font-size:24px;letter-spacing:-.02em}.metric small{display:block;color:#71869b;margin-top:6px}.list{display:grid;gap:8px}.item{padding:11px 12px;border:1px solid #182a3e;border-radius:13px;background:rgba(8,17,28,.68)}.item-row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}.item h3{margin:0 0 4px;font-size:12px}.item p{margin:0;color:#8194aa;font-size:10px;line-height:1.5}.actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}.tag{display:inline-flex;align-items:center;padding:4px 7px;border:1px solid #253b53;border-radius:999px;background:#0f1e2d;color:#b9cfe4;font-size:9px;font-weight:850}.muted{color:#8193a7}.status{padding:10px 12px;border:1px dashed #27445e;border-radius:12px;background:rgba(7,17,28,.7);color:#879bb0;font-size:10px;line-height:1.5}.good-t{color:#aaf3cf}.amber-t{color:#ffe2a4}.danger-t{color:#ffabb4}
-.search{display:grid;grid-template-columns:1fr auto auto;gap:7px}.search input{min-height:44px;padding:11px 13px;border-radius:12px;border:1px solid #2a435c;background:#07111c;color:#f4f8fc;outline:none}.search input:focus{border-color:#3d99ff;box-shadow:0 0 0 3px rgba(59,151,255,.11)}
-.table-wrap{overflow:auto;border:1px solid #192c40;border-radius:13px;background:#07111c}.tbl{width:100%;min-width:720px;border-collapse:collapse}.tbl th,.tbl td{padding:9px 9px;border-bottom:1px solid #16263a;text-align:left;font-size:10px}.tbl th{color:#8195aa;font-size:9px;text-transform:uppercase;letter-spacing:.08em}.tbl td{color:#d8e5f0}
-.modal-back{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:18px;background:rgba(0,0,0,.68)}.modal{width:min(820px,100%);max-height:92vh;overflow:auto;padding:19px;border:1px solid #2a4763;border-radius:18px;background:#07111c;box-shadow:0 28px 100px rgba(0,0,0,.55)}.modal-head{display:flex;justify-content:space-between;align-items:center;gap:10px}.modal-head h3{margin:0}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.span-2{grid-column:1/-1}
-.command-hero{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:stretch}.command-input{padding:16px;border-radius:16px;border:1px solid #2a435b;background:#07111c}.command-input textarea{width:100%;min-height:88px;border:0;background:transparent;resize:vertical;color:#fff;outline:none;font-size:15px}.command-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.quick-cmds{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.quick-cmds button{border:1px solid #29415a;background:#0b1724;color:#b9cde0;padding:7px 9px;border-radius:999px;font-size:10px}.quick-cmds button:hover{border-color:#3f86b8;color:#fff}
-.section.hidden{display:none}.view{animation:fade .18s ease}@keyframes fade{from{opacity:.2;transform:translateY(4px)}to{opacity:1;transform:none}}
-@media(max-width:1150px){.hero{grid-template-columns:1fr}.grid-2{grid-template-columns:1fr}.intel-strip,.grid-4{grid-template-columns:repeat(2,1fr)}}@media(max-width:720px){.shell{width:min(100% - 16px,1560px)}.identity .email{display:none}.intel-strip,.grid-3,.grid-4,.form-grid{grid-template-columns:1fr}.search,.command-hero{grid-template-columns:1fr}.hero h1{font-size:28px}.nav{top:62px}.topbar-in{min-height:62px}.hero-card{padding:18px}}
-</style></head><body>
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MUDA Indonesia — Owner Intelligence OS</title>
+<style>
+:root{--bg:#07111f;--panel:#0d1929;--panel2:#101f32;--line:#21334a;--text:#eef6ff;--muted:#8ea4bd;--blue:#4da3ff;--cyan:#45d7ff;--green:#43d38a;--amber:#ffc857;--red:#ff6d7a;--shadow:0 18px 50px rgba(0,0,0,.22)}
+*{box-sizing:border-box}html,body{margin:0;background:radial-gradient(1000px 500px at 20% -10%,#17375d 0,transparent 55%),var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}button,input,select,textarea{font:inherit}button{cursor:pointer}.hidden{display:none!important}
+.shell{width:min(1480px,calc(100% - 28px));margin:auto}.login{min-height:100vh;display:grid;place-items:center}.login-card{width:min(460px,100%);padding:30px;border:1px solid var(--line);border-radius:24px;background:rgba(13,25,41,.9);box-shadow:var(--shadow);backdrop-filter:blur(16px)}.brand{font-weight:900;letter-spacing:.08em}.brand small{display:block;color:var(--muted);font-weight:600;letter-spacing:0;margin-top:6px}.field{display:grid;gap:7px;margin:14px 0}.field label{font-size:12px;color:var(--muted)}.field input,.field select,.field textarea{width:100%;padding:11px 12px;border-radius:12px;border:1px solid var(--line);background:#091524;color:var(--text);outline:none}.field textarea{min-height:110px;resize:vertical}
+button.primary{border:0;background:linear-gradient(135deg,#2485ff,#38c7ff);color:#fff;padding:10px 15px;border-radius:11px;font-weight:800}button.secondary{border:1px solid var(--line);background:#0c1828;color:var(--text);padding:10px 14px;border-radius:11px;font-weight:700}button.good{background:rgba(67,211,138,.14);border:1px solid rgba(67,211,138,.35);color:#a9f6cf;padding:8px 11px;border-radius:10px}button.warn{background:rgba(255,200,87,.12);border:1px solid rgba(255,200,87,.35);color:#ffe09a;padding:8px 11px;border-radius:10px}button.danger{background:rgba(255,109,122,.12);border:1px solid rgba(255,109,122,.35);color:#ffb1b8;padding:8px 11px;border-radius:10px}
+.topbar{position:sticky;top:0;z-index:20;border-bottom:1px solid var(--line);background:rgba(7,17,31,.87);backdrop-filter:blur(18px)}.topbar-in{display:flex;align-items:center;justify-content:space-between;gap:15px;padding:13px 0}.topbar .brand{font-size:15px}.topbar .brand span{color:var(--cyan)}.identity{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px}.pill{padding:5px 9px;border-radius:999px;border:1px solid var(--line);font-size:10px;font-weight:800}.pill.ok{color:#a9f6cf;border-color:rgba(67,211,138,.35);background:rgba(67,211,138,.08)}.pill.warn{color:#ffe09a;border-color:rgba(255,200,87,.35);background:rgba(255,200,87,.07)}
+.main{padding:18px 0 50px}.hero{display:grid;grid-template-columns:1.5fr 1fr;gap:14px}.hero-card,.panel{border:1px solid var(--line);background:linear-gradient(180deg,rgba(16,31,50,.94),rgba(11,24,40,.92));border-radius:20px;box-shadow:var(--shadow)}.hero-card{padding:22px}.hero h1{margin:4px 0 8px;font-size:32px;line-height:1.05}.hero p{margin:0;color:var(--muted);max-width:760px}.hero-actions{display:flex;flex-wrap:wrap;gap:9px;margin-top:17px}.score{display:grid;grid-template-columns:1fr 1fr;gap:10px}.score-box{padding:16px;border:1px solid var(--line);border-radius:15px;background:#0b1828}.score-box .num{font-size:28px;font-weight:900;margin-top:4px}.score-box small{color:var(--muted)}
+.nav{display:flex;gap:7px;overflow:auto;padding:11px 0 3px}.nav button{white-space:nowrap;border:1px solid var(--line);background:#0b1625;color:#b9cce2;padding:9px 12px;border-radius:10px}.nav button.active{background:#173251;color:#fff;border-color:#2c71a9}
+.section{margin-top:15px}.section-head{display:flex;justify-content:space-between;align-items:center;gap:15px;margin-bottom:10px}.section-head h2{margin:0;font-size:17px}.section-head p{margin:3px 0 0;color:var(--muted);font-size:12px}.grid-2{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}.grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.grid-4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.panel{padding:15px}.metric{padding:14px;border:1px solid var(--line);border-radius:14px;background:#0a1726}.metric b{display:block;font-size:23px;margin-top:4px}.metric span{color:var(--muted);font-size:11px}.list{display:grid;gap:8px}.item{padding:12px;border:1px solid var(--line);border-radius:13px;background:#0b1828}.item-row{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.item h3{font-size:13px;margin:0 0 4px}.item p{margin:0;color:var(--muted);font-size:11px}.actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}.tag{display:inline-block;padding:4px 7px;border-radius:999px;background:#13253b;border:1px solid var(--line);color:#bbd2ec;font-size:10px}.muted{color:var(--muted)}.danger-t{color:#ff9da7}.good-t{color:#a9f6cf}.amber-t{color:#ffe09a}
+.table-wrap{overflow:auto}.tbl{width:100%;border-collapse:collapse;min-width:680px}.tbl th,.tbl td{border-bottom:1px solid var(--line);padding:9px 8px;text-align:left;font-size:11px}.tbl th{color:#a9bed5;font-size:10px;text-transform:uppercase;letter-spacing:.06em}.tbl td{color:#dce8f5}.right{text-align:right}.search{display:flex;gap:8px}.search input{flex:1;padding:10px 11px;border-radius:10px;border:1px solid var(--line);background:#091524;color:var(--text)}
+.modal-back{position:fixed;inset:0;display:grid;place-items:center;padding:20px;background:rgba(0,0,0,.62);z-index:50}.modal{width:min(760px,100%);max-height:90vh;overflow:auto;padding:20px;border:1px solid var(--line);border-radius:18px;background:#091524;box-shadow:var(--shadow)}.modal-head{display:flex;justify-content:space-between;align-items:center}.modal-head h3{margin:0}.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.span-2{grid-column:1/-1}.status{font-size:11px;color:var(--muted);margin-top:8px}
+@media(max-width:1100px){.hero,.grid-2{grid-template-columns:1fr}.grid-4{grid-template-columns:repeat(2,1fr)}}@media(max-width:700px){.shell{width:min(100% - 18px,1480px)}.grid-3,.form-grid{grid-template-columns:1fr}.span-2{grid-column:auto}.identity .email{display:none}.hero h1{font-size:26px}}
+
+/* V11.1 EXECUTIVE DESIGN SYSTEM */
+:root{
+  --bg:#050a12;--bg2:#08111e;--panel:#0b1420;--panel2:#0e1927;--line:#1b2a3d;
+  --text:#f3f7fb;--muted:#8798ad;--primary:#2f8cff;--primary2:#4fd6ff;
+  --ok:#35d58a;--warn:#f6bd4d;--danger:#ff6675;--violet:#8d7bff;
+  --shadow:0 24px 70px rgba(0,0,0,.34);--radius:18px;
+}
+body{letter-spacing:.002em}
+.shell{width:min(1540px,calc(100% - 36px))}
+.topbar{box-shadow:0 10px 35px rgba(0,0,0,.2)}
+.topbar-in{min-height:62px}
+.topbar .brand{font-size:14px;font-weight:950}
+.topbar .brand span{display:inline-block;margin-left:7px;color:#79dcff;font-size:11px;letter-spacing:.11em}
+.identity{gap:8px}
+.identity .email{max-width:330px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.main{padding-top:22px}
+.hero{grid-template-columns:1.55fr .95fr;gap:18px}
+.hero-card,.panel{
+  border-color:#1c3047;background:
+  linear-gradient(180deg,rgba(15,28,45,.97),rgba(8,16,27,.97));
+  box-shadow:0 16px 45px rgba(0,0,0,.18);
+  border-radius:20px;
+}
+.hero-card{padding:24px}
+.hero-card:first-child{position:relative;overflow:hidden}
+.hero-card:first-child:after{
+  content:"";position:absolute;right:-100px;top:-100px;width:280px;height:280px;border-radius:50%;
+  background:radial-gradient(circle,rgba(47,140,255,.25),transparent 68%);pointer-events:none
+}
+.tag{font-size:10px;letter-spacing:.16em;font-weight:900;color:#70d9ff}
+.hero h1{font-size:clamp(28px,3vw,46px);line-height:1.03;max-width:820px;margin:10px 0 12px;letter-spacing:-.035em}
+.hero p{max-width:900px;color:#a8b8c9;font-size:14px;line-height:1.65}
+.hero-actions{gap:8px;flex-wrap:wrap}
+button.primary{background:linear-gradient(135deg,#1e7cff,#34c8ff);box-shadow:0 8px 24px rgba(47,140,255,.22)}
+button.secondary{background:#0a1523;border-color:#253a52}
+button.secondary:hover,button.primary:hover{transform:translateY(-1px)}
+.nav{
+  position:sticky;top:63px;z-index:16;display:flex;gap:5px;overflow:auto;padding:7px;margin:14px 0;
+  background:rgba(6,13,22,.86);backdrop-filter:blur(18px);border:1px solid #17263a;border-radius:15px
+}
+.nav button{
+  border:1px solid transparent;background:transparent;color:#8fa3bb;font-weight:850;font-size:12px;
+  padding:10px 14px;border-radius:10px;white-space:nowrap
+}
+.nav button:hover{color:#eaf4ff;background:#0c1928}
+.nav button.active{color:#fff;background:linear-gradient(135deg,#164d86,#0e294a);border-color:#2367a8;box-shadow:inset 0 0 0 1px rgba(255,255,255,.04)}
+.metric{
+  background:linear-gradient(180deg,#0e1a29,#0a1320);border:1px solid #1b2c42;border-radius:15px;padding:15px 16px
+}
+.metric span{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:#7f93aa}
+.metric b{display:block;margin-top:5px;font-size:26px;line-height:1}
+.grid-2{gap:14px}.grid-3{gap:12px}.grid-4{gap:12px}
+.section-head{align-items:center}
+.section-head h2{font-size:18px;letter-spacing:-.02em}
+.section-head p{font-size:12px;line-height:1.45}
+.search{
+  display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center
+}
+.search input{
+  min-height:46px;padding:12px 14px;border-radius:13px;border:1px solid #27415a;
+  background:#071321;color:#eef6ff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.02)
+}
+.search input:focus{border-color:#3d9dff;box-shadow:0 0 0 3px rgba(47,140,255,.12)}
+.list{display:grid;gap:8px}
+.list>div{border:1px solid #172a3f;background:rgba(8,17,29,.62);border-radius:12px;padding:11px 12px}
+.status{
+  border:1px dashed #29445d;background:rgba(8,18,30,.65);border-radius:12px;padding:10px 12px;color:#8fa6bd
+}
+.score-box{border:1px solid #1d3148;background:linear-gradient(180deg,#0f1d2e,#0b1522);border-radius:15px;padding:14px}
+.score-box .num{font-size:25px;font-weight:950}
+.table-wrap{border:1px solid #1a2c40;border-radius:13px;overflow:auto;background:#081320}
+table{min-width:760px}
+.modal{border-color:#29445f;box-shadow:0 28px 90px rgba(0,0,0,.55)}
+@media (max-width:900px){.hero{grid-template-columns:1fr}.nav{top:60px}.search{grid-template-columns:1fr}.identity .email{max-width:180px}}
+</style>
+
+<style id="muda-v14-evolution">
+.evo-shell{display:grid;gap:14px}.evo-hero{display:flex;justify-content:space-between;gap:18px;align-items:end}.evo-hero h1{margin:7px 0 8px;font-size:27px;letter-spacing:-.02em}.evo-hero p{margin:0;color:#8194ad;max-width:900px;line-height:1.5}.evo-actions{display:flex;gap:8px;flex-wrap:wrap}.flow-row{display:grid;grid-template-columns:1fr auto 1fr auto 1fr auto 1fr auto 1fr auto 1fr;gap:8px;align-items:stretch;margin-top:14px}.flow-node{padding:13px;border-radius:15px;border:1px solid #22334c;background:linear-gradient(180deg,#0d192a,#091321);min-height:115px;display:grid;align-content:start;gap:5px}.flow-node b{font-size:10px;color:#6fa8ff}.flow-node strong{font-size:12px;letter-spacing:.08em}.flow-node span{font-size:10px;color:#7589a3;line-height:1.35}.flow-arrow{display:grid;place-items:center;color:#5c86b7;font-size:20px}.evo-grid{display:grid;grid-template-columns:1.1fr .9fr;gap:14px}.evo-list{display:grid;gap:8px}.evo-goal{border:1px solid #22334b;background:#0b1422;border-radius:13px;padding:11px}.evo-goal-head{display:flex;justify-content:space-between;gap:8px}.evo-goal h3{margin:0;font-size:12px}.evo-goal p{margin:5px 0 0;color:#7890aa;font-size:10px}.goal-bar{height:7px;border-radius:999px;background:#0a1a2b;overflow:hidden;margin-top:9px;border:1px solid #20354f}.goal-bar i{display:block;height:100%;background:linear-gradient(90deg,#2c8bff,#59e0ff);width:0}.evo-brief{min-height:130px;padding:14px;border-radius:14px;border:1px solid #22334c;background:radial-gradient(circle at 0 0,rgba(87,145,255,.11),transparent 45%),#0b1422}.evo-brief h3{margin:0;font-size:15px}.evo-brief p{color:#7f92ac;font-size:11px;line-height:1.45}.brief-points{display:grid;gap:6px;margin-top:9px}.brief-points div{font-size:10px;padding:7px 8px;background:#09111d;border:1px solid #1b2a40;border-radius:9px;color:#b6c7dc}.coverage-summary{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:11px}.coverage-chip{border:1px solid #233650;border-radius:999px;padding:6px 9px;background:#0a1422;font-size:10px;color:#9bb0c9}.coverage-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-height:510px;overflow:auto;padding-right:2px}.coverage-item{border:1px solid #203149;background:#0a1320;border-radius:12px;padding:10px}.coverage-item strong{display:block;font-size:11px}.coverage-item small{display:block;color:#7388a4;font-size:9px;margin-top:3px}.coverage-item span{display:inline-flex;margin-top:7px;padding:4px 7px;border-radius:999px;font-size:9px;border:1px solid #2a3c56}.coverage-item .active{color:#a7f0c9;background:rgba(81,228,160,.06);border-color:rgba(81,228,160,.22)}.coverage-item .foundation{color:#b9d7ff;background:rgba(112,167,255,.05);border-color:rgba(112,167,255,.22)}.coverage-item .enhanced{color:#e9d4ff;background:rgba(167,139,250,.06);border-color:rgba(167,139,250,.22)}.coverage-item .provider_dependent{color:#ffe09a;background:rgba(255,202,103,.06);border-color:rgba(255,202,103,.22)}.timeline-list{display:grid;gap:7px;max-height:460px;overflow:auto}.timeline-row{display:grid;grid-template-columns:100px 94px 1fr auto;gap:9px;align-items:center;border:1px solid #1f3048;background:#0a1320;border-radius:11px;padding:9px}.timeline-row time{font-size:9px;color:#6f849e}.timeline-row .tt{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#82a1c4}.timeline-row strong{font-size:11px}.timeline-row span{font-size:10px;color:#7489a3}.timeline-risk{padding:4px 7px;border-radius:999px;background:#102136;border:1px solid #263d59;font-size:9px;color:#aac1dd}.timeline-risk.high,.timeline-risk.critical{color:#ffb1b8;border-color:rgba(255,109,122,.3);background:rgba(255,109,122,.06)}
+@media(max-width:1100px){.flow-row{grid-template-columns:1fr 1fr 1fr}.flow-arrow{display:none}.evo-grid{grid-template-columns:1fr}.coverage-grid{grid-template-columns:repeat(2,1fr)}}@media(max-width:700px){.evo-hero{flex-direction:column;align-items:flex-start}.coverage-grid{grid-template-columns:1fr}.timeline-row{grid-template-columns:1fr}}
+</style>
+
+</head>
+<body>
 <div id="login" class="login">
   <div class="login-card">
-    <div class="login-mark"><div class="login-logo">M</div><div class="brand">BERITA MUDA <span>INDONESIA</span><small>OWNER MEDIA OPERATING SYSTEM · EXECUTIVE CONTROL</small></div></div>
-    <div class="status">Control plane untuk newsroom, intelligence, audience, money, operations, dan governance. Aksi sensitif tetap melewati risk gate dan audit.</div>
-    <div class="field"><label>Email Owner / Admin</label><input id="loginEmail" autocomplete="username" placeholder="owner@..." /></div>
-    <div class="field"><label>Password</label><input id="loginPass" type="password" autocomplete="current-password" placeholder="••••••••" /></div>
-    <button class="primary" style="width:100%;min-height:46px" onclick="login()">Masuk ke Owner OS</button>
-    <div id="loginMsg" class="status" style="margin-top:10px"></div>
+    <div class="brand">BERITA MUDA <span>INDONESIA</span><small>Owner Intelligence Operating System · V14</small></div>
+    <div class="field"><label>Email Owner / Admin</label><input id="loginEmail" autocomplete="username" /></div>
+    <div class="field"><label>Password</label><input id="loginPass" type="password" autocomplete="current-password" /></div>
+    <button class="primary" style="width:100%" onclick="login()">Masuk ke Owner OS</button>
+    <div id="loginMsg" class="status"></div>
   </div>
 </div>
 
 <div id="app" class="hidden">
-  <div class="topbar"><div class="shell topbar-in">
-    <div class="top-left"><div class="mark">M</div><div class="top-title">MUDA MEDIA OS<small>OWNER CONTROL · V11.2</small></div></div>
-    <div class="identity"><span id="healthPill" class="pill warn">CHECKING</span><span id="identity" class="email"></span><button class="secondary" onclick="refreshAll()">↻ Refresh</button><button class="secondary" onclick="logout()">Keluar</button></div>
-  </div></div>
-
+  <div class="topbar"><div class="shell topbar-in"><div class="brand">MUDA <span>MEDIA OS · OWNER CONTROL</span></div><div class="identity"><span id="healthPill" class="pill warn">CHECKING</span><span class="email" id="identity"></span><button class="secondary" onclick="refreshAll()">↻ Refresh</button><button class="secondary" onclick="logout()">Keluar</button></div></div></div>
   <main class="shell main">
     <section class="hero">
       <div class="hero-card">
-        <div class="eyebrow"><span class="pulse"></span> EXECUTIVE COMMAND CENTER</div>
-        <h1>Owner OS yang bekerja, bukan sekadar menampilkan angka.</h1>
-        <p>Perintahkan newsroom, jalankan intelligence, kelola audience dan revenue, pantau reliability, dan ambil tindakan langsung dari satu control plane. Sistem menampilkan kondisi nyata dan tidak menganggap provider yang belum dikonfigurasi sebagai aktif.</p>
+        <div class="tag">MUDA OWNER OS · EXECUTIVE CONTROL</div>
+        <h1>Kontrol newsroom, audience, revenue, automation, dan reliability dari satu layar.</h1>
+        <p>Satu control plane untuk perintah Owner, intelligence, editorial workflow, media, homepage, audience, money, operasi, dan governance. Setiap aksi mengikuti policy, risk gate, audit, dan recovery path.</p>
         <div class="hero-actions">
-          <button class="primary" id="syncBtn" onclick="runSync()">↻ Sync News</button>
-          <button class="secondary" id="runBreakingBtn" onclick="runBreaking()">⚡ Run Breaking</button>
+          <button class="primary" onclick="runSync()">↻ Sync News</button>
+          <button class="secondary" onclick="runBreaking()">⚡ Breaking Engine</button>
           <button class="secondary" onclick="openArticle()">＋ Artikel</button>
           <button class="secondary" onclick="openVideo()">＋ Video</button>
-          <button class="secondary" onclick="seedTask()">＋ Task</button>
-          <button class="secondary" onclick="document.querySelector('[data-view=command]').click();setTimeout(()=>document.getElementById('ownerCommandText')?.focus(),50)">⌘ Command</button>
+          <button class="secondary" onclick="seedTask()">＋ Task Owner</button>
+          <button class="secondary" onclick="document.querySelector('[data-view=command]').click();document.getElementById('ownerCommandText')?.focus()">⌘ Command</button>
         </div>
-        <div id="lastSync" class="hero-status"><span class="pulse"></span> Memuat intelligence dan operational state…</div>
+        <div class="status" id="lastSync">System booting · checking intelligence, reliability, and owner services…</div>
       </div>
       <div class="hero-card">
-        <div class="hero-side-head"><div class="eyebrow">EXECUTIVE PULSE</div><span class="pill ok">OWNER CONTROL</span></div>
-        <div class="score">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div class="tag">EXECUTIVE PULSE</div><span class="pill ok">OWNER CONTROL</span></div>
+        <div class="score" style="margin-top:12px">
           <div class="score-box"><small>Health</small><div class="num" id="mHealth">—</div></div>
           <div class="score-box"><small>Breaking</small><div class="num" id="mBreaking">—</div></div>
           <div class="score-box"><small>Live Events</small><div class="num" id="mEvents">—</div></div>
           <div class="score-box"><small>Open Alerts</small><div class="num" id="mAlerts">—</div></div>
         </div>
-        <div class="status" style="margin-top:11px">Decision layer: recommendations, alerts, source health, owner actions, and command history berada di satu jalur.</div>
+        <div class="status" style="margin-top:12px">Decision layer aktif · recommendations, alerts, source health, and owner actions are unified.</div>
       </div>
     </section>
 
-    <section class="intel-strip" id="intelStrip">
-      <div class="intel-card" onclick="document.querySelector('[data-view=intelligence]').click()"><div class="k">Analytics</div><div class="v"><span id="miAnalytics">Open intelligence</span><span class="mini-dot"></span></div></div>
-      <div class="intel-card" onclick="document.querySelector('[data-view=money]').click()"><div class="k">Revenue</div><div class="v"><span id="miRevenue">Open money OS</span><span class="mini-dot"></span></div></div>
-      <div class="intel-card" onclick="document.querySelector('[data-view=operations]').click()"><div class="k">Ads / Providers</div><div class="v"><span id="miAds">Provider state</span><span class="mini-dot"></span></div></div>
-      <div class="intel-card" onclick="document.querySelector('[data-view=operations]').click()"><div class="k">System</div><div class="v"><span id="miSystem">Operational health</span><span class="mini-dot"></span></div></div>
-    </section>
-
+    <div class="status" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between">
+      <div style="display:flex;gap:7px;flex-wrap:wrap">
+        <span class="pill ok">VOICE READY</span>
+        <span class="pill ok">COMMAND BUS</span>
+        <span class="pill ok">RISK GATE</span>
+        <span class="pill ok">AUDIT</span>
+        <span class="pill ok">UNDO FOUNDATION</span>
+        <span class="pill ok">INTELLIGENCE</span>
+      </div>
+      <span class="muted">V14 · evolution control plane</span>
+    </div>
     <div class="nav" id="nav">
-      <button class="active" data-view="command">⌘ Command</button><button data-view="newsroom">✎ Newsroom</button><button data-view="intelligence">◈ Intelligence</button><button data-view="audience">◉ Audience</button><button data-view="money">$ Money</button><button data-view="operations">⚙ Operations</button><button data-view="governance">▣ Governance</button>
+      <button class="active" data-view="mission">Mission</button><button data-view="command">Command</button><button data-view="newsroom">Newsroom</button><button data-view="intelligence">Intelligence</button><button data-view="audience">Audience</button><button data-view="money">Money</button><button data-view="operations">Operations</button><button data-view="governance">Governance</button><button data-view="evolution">Evolution</button>
     </div>
 
-    <section id="view-command" class="section view">
-      <div class="grid-2">
-        <div class="panel">
-          <div class="section-head"><div><h2>Owner Command</h2><p>Ketik atau ucapkan tujuan Anda. Router menerjemahkan intent → risk → executor → audit.</p></div><button class="secondary" onclick="loadCommands()">History</button></div>
-          <div class="command-hero"><div class="command-input"><textarea id="ownerCommandText" placeholder="Contoh: sync berita sekarang\n• publish homepage ID ...\n• jadikan artikel ... featured\n• tampilkan kesehatan sistem"></textarea><div class="quick-cmds"><button type="button" onclick="ownerCommandText.value='sync berita sekarang'">Sync berita</button><button type="button" onclick="ownerCommandText.value='tampilkan kesehatan sistem'">Cek kesehatan</button><button type="button" onclick="ownerCommandText.value='jalankan breaking sekarang'">Run breaking</button></div></div><div style="display:grid;gap:7px;align-content:start"><button class="secondary" id="voiceCommandBtn" type="button">🎙️ Voice</button><button class="primary" onclick="submitOwnerCommand()">Jalankan</button></div></div>
-          <div id="commandHint" class="status" style="margin-top:10px">Command Bus siap. Aksi high-risk akan meminta konfirmasi sebelum dieksekusi.</div>
-          <div id="commandLog" class="list" style="margin-top:10px"></div>
+
+    <section id="view-mission" class="section view">
+      <div class="owner-mission">
+        <div class="mission-hero">
+          <div>
+            <div class="eyebrow">MUDA INTELLIGENCE OS · LIVE DECISION + EVOLUTION LAYER</div>
+            <h1>Owner tidak perlu mencari data. Sistem harus memberi tahu <span>apa yang penting sekarang.</span></h1>
+            <p id="miHeadline">Menghubungkan newsroom, audience, revenue, reliability, governance dan command bus menjadi satu operating picture.</p>
+            <div class="copilot-row">
+              <input id="miCopilot" autocomplete="off" placeholder="Tanya atau beri perintah… contoh: apa yang harus saya lakukan sekarang?" />
+              <button class="mi-voice" id="miVoiceBtn">🎙 Voice</button>
+              <button class="mi-ask" id="miAskBtn">Ask Copilot</button>
+            </div>
+            <div class="suggestions" id="miSuggestions"></div>
+          </div>
+          <div class="confidence-ring"><div class="ring-num" id="miConfidence">—</div><div class="ring-label">decision confidence</div><div class="ring-sub" id="miUpdated">waiting for signals</div></div>
         </div>
-        <div class="panel">
-          <div class="section-head"><div><h2>Decision Brief</h2><p>Prioritas yang sebaiknya diperhatikan Owner sekarang.</p></div><button class="secondary" onclick="loadDecision()">↻</button></div>
-          <div id="decisionBrief" class="list"></div>
-          <div id="performanceBrief" class="status" style="margin-top:10px">Performance probe: checking…</div>
+
+        <div class="signal-strip">
+          <button class="signal-card" data-jump="operations"><small>SYSTEM CONFIDENCE</small><strong id="miHealth">—</strong><span id="miHealthSub">health + source integrity</span></button>
+          <button class="signal-card" data-jump="intelligence"><small>OPPORTUNITY</small><strong id="miOpportunity">—</strong><span>story + breaking potential</span></button>
+          <button class="signal-card" data-jump="command"><small>DECISION QUEUE</small><strong id="miDecisionCount">—</strong><span>recommendations waiting</span></button>
+          <button class="signal-card" data-jump="money"><small>REVENUE RUN-RATE</small><strong id="miRevenue">—</strong><span>30 day ledger signal</span></button>
+          <button class="signal-card" data-jump="operations"><small>SOURCE RISK</small><strong id="miSourceRisk">—</strong><span>degraded sources</span></button>
+        </div>
+
+        <div class="mission-grid">
+          <div class="mission-panel wide">
+            <div class="panel-head"><div><div class="kicker">DECISION STACK</div><h2>Yang perlu Anda ketahui / lakukan</h2></div><button class="ghost" id="miRefresh">Refresh intelligence</button></div>
+            <div id="miDecisions" class="decision-list"></div>
+          </div>
+          <div class="mission-panel">
+            <div class="panel-head"><div><div class="kicker">NOW PLAYING</div><h2>Story opportunity</h2></div></div>
+            <div id="miTopStory" class="opportunity"></div>
+            <div class="micro-actions"><button class="ghost" onclick="document.querySelector('[data-view="newsroom"]').click()">Open Newsroom</button><button class="ghost" onclick="document.querySelector('[data-view="intelligence"]').click()">Open Radar</button></div>
+          </div>
+        </div>
+
+        <div class="mission-grid lower">
+          <div class="mission-panel">
+            <div class="panel-head"><div><div class="kicker">EVENT RADAR</div><h2>What is accelerating</h2></div></div>
+            <div id="miRadar" class="radar-list"></div>
+          </div>
+          <div class="mission-panel">
+            <div class="panel-head"><div><div class="kicker">OPERATIONS</div><h2>What is at risk</h2></div></div>
+            <div id="miRisks" class="risk-list"></div>
+          </div>
+          <div class="mission-panel">
+            <div class="panel-head"><div><div class="kicker">AUDIENCE</div><h2>Demand signal</h2></div></div>
+            <div id="miAudience" class="mini-insight"></div>
+          </div>
+        </div>
+
+        <div class="mission-grid lower">
+          <div class="mission-panel wide">
+            <div class="panel-head"><div><div class="kicker">PERFORMANCE</div><h2>Stories with momentum</h2></div></div>
+            <div id="miPerformance" class="story-table"></div>
+          </div>
+          <div class="mission-panel">
+            <div class="panel-head"><div><div class="kicker">MONEY</div><h2>Revenue intelligence</h2></div></div>
+            <div id="miMoney" class="mini-insight"></div>
+          </div>
+        </div>
+
+        <div class="mission-panel action-surface">
+          <div class="panel-head"><div><div class="kicker">COMMAND BUS</div><h2>Execute with guardrails</h2><p>Text dan voice masuk ke jalur yang sama: intent → role → risk → confirmation → execution → audit.</p></div></div>
+          <div class="quick-actions">
+            <button data-cmd="Tampilkan kesehatan sistem sekarang">Health check</button>
+            <button data-cmd="Sync berita sekarang">Sync berita</button>
+            <button data-cmd="Jalankan breaking engine">Breaking engine</button>
+            <button data-cmd="Tampilkan source yang bermasalah">Source problems</button>
+            <button data-cmd="Tampilkan command terakhir">Command history</button>
+            <button data-cmd="Tampilkan undo yang tersedia">Undo queue</button>
+          </div>
+          <div id="miCommandResult" class="command-result">Siap menerima instruksi Owner.</div>
         </div>
       </div>
-      <div class="grid-4" style="margin-top:14px"><div class="metric"><span>Published Articles</span><b id="pubArticles">—</b></div><div class="metric"><span>Total Views</span><b id="views">—</b></div><div class="metric"><span>Total Shares</span><b id="shares">—</b></div><div class="metric"><span>Degraded Sources</span><b id="degraded">—</b></div></div>
-      <div class="grid-2" style="margin-top:14px"><div class="panel"><div class="section-head"><div><h2>Recommended Actions</h2><p>Task yang dapat langsung dijalankan Owner.</p></div><button class="secondary" onclick="seedTask()">+ Task</button></div><div id="tasks" class="list"></div></div><div class="panel"><div class="section-head"><div><h2>Live Alerts</h2><p>Warning, error, dan critical yang masih terbuka.</p></div></div><div id="alerts" class="list"></div></div></div>
+    </section>
+
+
+
+    <section id="view-evolution" class="section view hidden">
+      <div class="evo-shell">
+        <div class="evo-hero mission-panel">
+          <div>
+            <div class="eyebrow">OWNER EVOLUTION LAYER · V14</div>
+            <h1>Observe → Understand → Decide → Execute → Verify → Learn</h1>
+            <p>Ini bukan halaman statistik. Ini adalah peta kerja sistem: setiap insight dapat menjadi keputusan, setiap keputusan memiliki risk gate, setiap aksi menghasilkan outcome, dan outcome kembali menjadi sinyal untuk rekomendasi berikutnya.</p>
+          </div>
+          <div class="evo-actions"><button class="primary" id="evoMorning">Generate briefing</button><button class="secondary" id="evoRefresh">Refresh evolution</button></div>
+        </div>
+
+        <div class="evo-flow mission-panel">
+          <div class="kicker">OPERATING LOOP</div>
+          <div class="flow-row">
+            <div class="flow-node"><b>01</b><strong>OBSERVE</strong><span>news · audience · money · system</span></div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-node"><b>02</b><strong>UNDERSTAND</strong><span>cluster · score · root cause</span></div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-node"><b>03</b><strong>DECIDE</strong><span>priority · confidence · why</span></div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-node"><b>04</b><strong>EXECUTE</strong><span>plan · role · confirmation</span></div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-node"><b>05</b><strong>VERIFY</strong><span>result · audit · undo</span></div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-node"><b>06</b><strong>LEARN</strong><span>outcome · feedback · improve</span></div>
+          </div>
+        </div>
+
+        <div class="evo-grid">
+          <div class="mission-panel">
+            <div class="panel-head"><div><div class="kicker">OWNER GOALS</div><h2>Goal-driven operating mode</h2></div><button class="ghost" id="evoGoalAdd">+ Goal</button></div>
+            <div id="evoGoals" class="evo-list"></div>
+          </div>
+          <div class="mission-panel">
+            <div class="panel-head"><div><div class="kicker">DAILY BRIEF</div><h2>What matters today</h2></div></div>
+            <div id="evoBrief" class="evo-brief"></div>
+          </div>
+        </div>
+
+        <div class="evo-grid">
+          <div class="mission-panel wide">
+            <div class="panel-head"><div><div class="kicker">FEATURE COVERAGE</div><h2>Nothing disappears silently</h2><p>Catalog semua capability lama, peningkatan baru, dan dependensi provider.</p></div></div>
+            <div class="coverage-summary" id="evoCoverageSummary"></div>
+            <div class="coverage-grid" id="evoCoverage"></div>
+          </div>
+          <div class="mission-panel">
+            <div class="panel-head"><div><div class="kicker">AUTONOMY</div><h2>Guardrails</h2><p>Assisted, semi-auto, auto — tetap dibatasi risk & role.</p></div></div>
+            <div id="evoAutonomy" class="evo-list"></div>
+          </div>
+        </div>
+
+        <div class="mission-panel">
+          <div class="panel-head"><div><div class="kicker">UNIVERSAL TIMELINE</div><h2>Cause → Action → Outcome</h2></div><button class="ghost" id="evoTimelineRefresh">Refresh</button></div>
+          <div id="evoTimeline" class="timeline-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-command" class="section view hidden">
+      <div class="panel" style="margin-bottom:12px"><div class="section-head"><div><h2>Owner Command</h2><p>Perintah bahasa alami untuk aksi yang tersedia. Aksi berisiko tinggi selalu meminta konfirmasi dan tercatat di audit.</p></div><button class="secondary" onclick="loadCommands()">Command Log</button></div><div class="search"><input id="ownerCommandText" placeholder="Contoh: sync berita sekarang / jadikan artikel ID ... featured / publish homepage ID ..." /><button class="secondary" id="voiceCommandBtn" type="button">🎙️ Voice</button><button class="primary" onclick="submitOwnerCommand()">Jalankan</button></div><div id="commandHint" class="status">Command Router aktif · tindakan eksternal tetap dikendalikan registry dan confirmation gate.</div><div id="commandLog" class="list" style="margin-top:10px"></div></div>
+      <div class="grid-4"><div class="metric"><span>Published Articles</span><b id="pubArticles">—</b></div><div class="metric"><span>Views</span><b id="views">—</b></div><div class="metric"><span>Shares</span><b id="shares">—</b></div><div class="metric"><span>Degraded Sources</span><b id="degraded">—</b></div></div>
+      <div class="grid-2" style="margin-top:12px"><div class="panel"><div class="section-head"><div><h2>Decision Brief</h2><p>Rekomendasi tindakan lintas newsroom, reliability, growth, dan money.</p></div><button class="secondary" onclick="loadDecision()">Refresh</button></div><div id="decisionBrief" class="list"></div><div class="status" id="performanceBrief">Performance: checking…</div></div><div class="panel"><div class="section-head"><div><h2>Recommended Owner Actions</h2><p>Tugas prioritas lintas lini.</p></div></div><div id="tasks" class="list"></div></div><div class="panel"><div class="section-head"><div><h2>Live Alerts</h2><p>Warning, error, critical.</p></div></div><div id="alerts" class="list"></div></div></div>
     </section>
 
     <section id="view-newsroom" class="section view hidden">
-      <div class="grid-2"><div class="panel"><div class="section-head"><div><h2>Editorial Desk</h2><p>Artikel + video dalam satu workflow.</p></div><div class="actions"><button class="secondary" onclick="loadContent()">↻</button><button class="primary" onclick="openArticle()">+ Artikel</button><button class="secondary" onclick="openVideo()">+ Video</button></div></div><div class="search"><input id="contentSearch" placeholder="Cari judul, topik, atau status…" oninput="renderContent()"></div><div id="contentTable" class="table-wrap" style="margin-top:9px"></div></div>
-      <div class="panel"><div class="section-head"><div><h2>Homepage Composer</h2><p>Slot manual, intelligent, breaking, trending.</p></div><button class="primary" onclick="newHomepage()">+ Layout</button></div><div id="homepageList" class="list"></div></div></div>
-      <div class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Breaking Engine</h2><p>Candidate → review → live. Jalankan engine hanya ketika diperlukan.</p></div><button class="secondary" onclick="runBreaking()">Run Engine</button></div><div id="breakingList" class="list"></div></div>
+      <div class="grid-2"><div class="panel"><div class="section-head"><div><h2>Editorial Desk</h2><p>Artikel dan video sebagai satu workflow.</p></div><button class="secondary" onclick="loadContent()">Refresh</button></div><div class="search"><input id="contentSearch" placeholder="Cari judul…" oninput="renderContent()" /></div><div id="contentTable" class="table-wrap" style="margin-top:8px"></div></div><div class="panel"><div class="section-head"><div><h2>Homepage Composer</h2><p>Susun slot manual/intelligent/breaking/trending.</p></div><button class="primary" onclick="newHomepage()">+ Layout</button></div><div id="homepageList" class="list"></div></div></div>
+      <div class="panel section"><div class="section-head"><div><h2>Breaking Command</h2><p>Candidate → review → live.</p></div><button class="secondary" onclick="runBreaking()">Run Engine</button></div><div id="breakingList" class="list"></div></div>
     </section>
 
-    <section id="view-intelligence" class="section view hidden"><div class="grid-2"><div class="panel"><div class="section-head"><div><h2>Intelligence Radar</h2><p>Event importance, breaking, trending, freshness, dan owner score.</p></div><button class="secondary" onclick="loadRadar()">↻ Radar</button></div><div id="radar" class="list"></div></div><div class="panel"><div class="section-head"><div><h2>Source Reliability</h2><p>Status source, latency, dan degraded feed.</p></div></div><div id="sourcesMini" class="list"></div></div></div></section>
+    <section id="view-intelligence" class="section view hidden">
+      <div class="grid-2"><div class="panel"><div class="section-head"><div><h2>Intelligence Radar</h2><p>Event importance, breaking, trending, owner score.</p></div><button class="secondary" onclick="loadRadar()">Refresh Radar</button></div><div id="radar" class="list"></div></div><div class="panel"><div class="section-head"><div><h2>Source Reliability</h2><p>Health sumber berita dan latency.</p></div></div><div id="sourcesMini" class="list"></div></div></div>
+    </section>
 
-    <section id="view-audience" class="section view hidden"><div class="grid-2"><div class="panel"><div class="section-head"><div><h2>Community Safety</h2><p>Moderation dan reputation engine.</p></div><button class="secondary" onclick="loadComments()">↻</button></div><div id="comments" class="list"></div></div><div class="panel"><div class="section-head"><div><h2>Newsletter & Audience</h2><p>Audience operations dan broadcast status.</p></div></div><div id="newsletter" class="list"></div></div></div></section>
+    <section id="view-audience" class="section view hidden">
+      <div class="grid-2"><div class="panel"><div class="section-head"><div><h2>Community Safety</h2><p>Moderation dan reputation engine.</p></div><button class="secondary" onclick="loadComments()">Refresh</button></div><div id="comments" class="list"></div></div><div class="panel"><div class="section-head"><div><h2>Newsletter & Audience</h2><p>Subscriber dan audience operations.</p></div></div><div id="newsletter" class="list"></div></div></div>
+    </section>
 
-    <section id="view-money" class="section view hidden"><div class="grid-3"><div class="metric"><span>Revenue 30 Hari</span><b id="rev30">—</b></div><div class="metric"><span>Affiliate Commission</span><b id="revAff">—</b></div><div class="metric"><span>Revenue Entries</span><b id="revEntries">—</b></div></div><div class="grid-2" style="margin-top:14px"><div class="panel"><div class="section-head"><div><h2>Revenue Intelligence</h2><p>Ads, direct, sponsor, affiliate, video, subscription.</p></div></div><div id="revenue" class="table-wrap"></div></div><div class="panel"><div class="section-head"><div><h2>Provider State</h2><p>Fitur provider-dependent ditampilkan sesuai kondisi nyata.</p></div></div><div id="providersMoney" class="list"></div></div></div><div class="grid-2" style="margin-top:14px"><div class="panel"><div class="section-head"><div><h2>Wallet & Reconciliation</h2><p>Internal bookkeeping, transaction, settlement.</p></div><button class="secondary" onclick="loadWallet()">↻</button></div><div id="walletSummary" class="grid-3"></div><div id="walletTx" class="table-wrap" style="margin-top:10px"></div></div><div class="panel"><div class="section-head"><div><h2>Payout Operations</h2><p>Request → approve → paid/rejected.</p></div></div><div id="payouts" class="list"></div></div></div></section>
+    <section id="view-money" class="section view hidden">
+      <div class="grid-3"><div class="metric"><span>Revenue 30 hari</span><b id="rev30">—</b></div><div class="metric"><span>Affiliate Commission</span><b id="revAff">—</b></div><div class="metric"><span>Entries</span><b id="revEntries">—</b></div></div>
+      <div class="grid-2" style="margin-top:12px"><div class="panel"><div class="section-head"><div><h2>Revenue Intelligence</h2><p>Adsense, direct ad, sponsor, affiliate, video, subscription.</p></div></div><div id="revenue" class="table-wrap"></div></div><div class="panel"><div class="section-head"><div><h2>Providers</h2><p>Provider-dependent features are shown honestly.</p></div></div><div id="providersMoney" class="list"></div></div></div>
+      <div class="grid-2" style="margin-top:12px"><div class="panel"><div class="section-head"><div><h2>Wallet & Reconciliation</h2><p>Saldo available/pending, transaksi, payout dan variance.</p></div><button class="secondary" onclick="loadWallet()">Refresh Wallet</button></div><div id="walletSummary" class="grid-3"></div><div id="walletTx" class="table-wrap" style="margin-top:10px"></div></div><div class="panel"><div class="section-head"><div><h2>Payout Operations</h2><p>Status request → approval → paid/rejected/cancelled.</p></div></div><div id="payouts" class="list"></div></div></div>
+    </section>
 
-    <section id="view-operations" class="section view hidden"><div class="grid-2"><div class="panel"><div class="section-head"><div><h2>Automation & System</h2><p>Run history, operations, system state.</p></div></div><div id="automation" class="list"></div></div><div class="panel"><div class="section-head"><div><h2>Provider Control</h2><p>Provider status, tidak ada aktivasi palsu.</p></div></div><div id="providers" class="list"></div></div></div><div class="panel" style="margin-top:14px"><div class="section-head"><div><h2>Scheduler & Operations</h2><p>Jadwalkan action Owner OS dan lihat status job.</p></div><button class="primary" onclick="newSchedule()">+ Schedule</button></div><div id="schedules" class="list"></div></div></section>
+    <section id="view-operations" class="section view hidden">
+      <div class="grid-2"><div class="panel"><div class="section-head"><div><h2>Automation & System</h2><p>Rules, runs, unresolved events, health.</p></div></div><div id="automation" class="list"></div></div><div class="panel"><div class="section-head"><div><h2>Provider Control</h2><p>Supabase, RSS, AI, AdSense, Scheduler, Distribution.</p></div></div><div id="providers" class="list"></div></div></div>
+      <div class="panel section"><div class="section-head"><div><h2>Scheduler & Operations</h2><p>Jadwalkan action Owner OS dan lihat status job.</p></div><button class="primary" onclick="newSchedule()">+ Schedule</button></div><div id="schedules" class="list"></div></div>
+    </section>
 
-    <section id="view-governance" class="section view hidden"><div class="grid-2"><div class="panel"><div class="section-head"><div><h2>Audit Trail</h2><p>Perubahan penting harus terlacak.</p></div></div><div id="audit" class="list"></div></div><div class="panel"><div class="section-head"><div><h2>Content Revisions</h2><p>Versioning artikel/video.</p></div></div><div id="revisions" class="list"><div class="muted">Pilih konten di Newsroom untuk melihat revisi.</div></div></div></div></section>
+    <section id="view-governance" class="section view hidden">
+      <div class="grid-2"><div class="panel"><div class="section-head"><div><h2>Audit Trail</h2><p>Perubahan penting harus terlacak.</p></div></div><div id="audit" class="list"></div></div><div class="panel"><div class="section-head"><div><h2>Content Revisions</h2><p>Versioning artikel/video.</p></div></div><div id="revisions" class="list"><div class="muted">Pilih konten di Newsroom untuk melihat revisi.</div></div></div></div>
+    </section>
   </main>
 </div>
 
-<div class="modal-back hidden" id="modalBack"><div class="modal"><div class="modal-head"><h3 id="modalTitle">Editor</h3><button class="secondary" onclick="closeModal()">Tutup</button></div><div id="modalBody"></div></div></div>
+<div id="modalBack" class="modal-back hidden"><div class="modal"><div class="modal-head"><h3 id="modalTitle">Editor</h3><button class="secondary" onclick="closeModal()">Tutup</button></div><div id="modalBody"></div></div></div>
+
 <script>
 const $=id=>document.getElementById(id), K='muda_owner_os_token', U='muda_owner_os_user';
 let token=sessionStorage.getItem(K)||'', user=JSON.parse(sessionStorage.getItem(U)||'null');
@@ -129,7 +346,7 @@ function enter(){$('login').classList.add('hidden');$('app').classList.remove('h
 if(token)enter();
 $('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')login()});
 $('nav').addEventListener('click',e=>{const b=e.target.closest('button[data-view]');if(!b)return;document.querySelectorAll('#nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.view').forEach(x=>x.classList.add('hidden'));$('view-'+b.dataset.view).classList.remove('hidden');const loaders={command:loadCommands,newsroom:loadContent,intelligence:loadRadar,audience:loadAudience,money:loadMoney,operations:loadOperations,governance:loadGovernance};if(loaders[b.dataset.view])loaders[b.dataset.view]()});
-async function refreshAll(){try{const o=await api('/api/admin/owner/overview');state.overview=o;$('mHealth').textContent=(o.executive.health_score||0)+'%';$('mBreaking').textContent=fmt(o.executive.active_breaking);$('mEvents').textContent=fmt(o.executive.active_events);$('mAlerts').textContent=fmt(o.executive.open_alerts);$('pubArticles').textContent=fmt(o.executive.published_articles);$('views').textContent=fmt(o.executive.total_views);$('shares').textContent=fmt(o.executive.total_shares);$('degraded').textContent=fmt(o.executive.degraded_sources);$('healthPill').textContent=(o.executive.health_score||0)+'% HEALTH';$('healthPill').className='pill '+(o.executive.health_score>=85?'ok':'warn');$('lastSync').textContent='Dashboard diperbarui '+new Date(o.generated_at).toLocaleString('id-ID');renderTasks(o.tasks);renderAlerts(o.alerts);await Promise.allSettled([loadCommands(),loadDecision()]);}catch(e){$('healthPill').textContent='ERROR';$('healthPill').className='pill warn';console.error(e); $('lastSync').textContent='Gagal memuat Owner OS: '+e.message; toast(e.message,true)}}
+async function refreshAll(){try{const o=await api('/api/admin/owner/overview');state.overview=o;$('mHealth').textContent=(o.executive.health_score||0)+'%';$('mBreaking').textContent=fmt(o.executive.active_breaking);$('mEvents').textContent=fmt(o.executive.active_events);$('mAlerts').textContent=fmt(o.executive.open_alerts);$('pubArticles').textContent=fmt(o.executive.published_articles);$('views').textContent=fmt(o.executive.total_views);$('shares').textContent=fmt(o.executive.total_shares);$('degraded').textContent=fmt(o.executive.degraded_sources);$('healthPill').textContent=(o.executive.health_score||0)+'% HEALTH';$('healthPill').className='pill '+(o.executive.health_score>=85?'ok':'warn');$('lastSync').textContent='Dashboard diperbarui '+new Date(o.generated_at).toLocaleString('id-ID');renderTasks(o.tasks);renderAlerts(o.alerts);await Promise.allSettled([loadCommands(),loadDecision()]);}catch(e){$('healthPill').textContent='ERROR';$('healthPill').className='pill warn';console.error(e)}}
 function renderTasks(rows){$('tasks').innerHTML=(rows||[]).map(x=>`<div class="item"><div class="item-row"><div><h3>${esc(x.title)}</h3><p>${esc(x.task_type)} · priority ${esc(x.priority)} ${x.due_at?'· '+esc(new Date(x.due_at).toLocaleString('id-ID')):''}</p></div><span class="tag">${esc(x.status)}</span></div><div class="actions"><button class="good" onclick="taskStatus('${x.id}','done')">Selesai</button><button class="secondary" onclick="taskStatus('${x.id}','in_progress')">Kerjakan</button></div></div>`).join('')||'<div class="muted">Tidak ada task terbuka.</div>'}
 function renderAlerts(rows){$('alerts').innerHTML=(rows||[]).map(x=>`<div class="item"><div class="item-row"><div><h3>${esc(x.title)}</h3><p>${esc(x.message||'')} · ${esc(x.source)}</p></div><span class="tag ${x.severity==='critical'?'danger-t':''}">${esc(x.severity)}</span></div><div class="actions"><button class="secondary" onclick="alertStatus('${x.id}','acknowledged')">Acknowledge</button><button class="good" onclick="alertStatus('${x.id}','resolved')">Resolve</button></div></div>`).join('')||'<div class="muted">Tidak ada alert terbuka.</div>'}
 async function taskStatus(id,status){await api('/api/admin/tasks/'+id,{method:'PATCH',body:JSON.stringify({status})});refreshAll()}
@@ -183,4 +400,113 @@ async function showRevisions(type,id){try{const rows=await api('/api/admin/revis
 function seedTask(){openModal('Owner Task',`<div class="field"><label>Judul</label><input id="t_title" value="Review dashboard intelligence"></div><div class="field"><label>Prioritas</label><input id="t_pri" type="number" value="80"></div><div class="actions"><button class="primary" onclick="createTask()">Buat Task</button></div>`)}
 async function createTask(){await api('/api/admin/tasks',{method:'POST',body:JSON.stringify({title:$('t_title').value,priority:Number($('t_pri').value),task_type:'manual'})});closeModal();refreshAll()}
 function toast(msg,bad=false){const d=document.createElement('div');d.textContent=msg;d.style.cssText='position:fixed;right:18px;bottom:18px;z-index:99;padding:12px 15px;border-radius:12px;border:1px solid '+(bad?'#9f4f57':'#2f7a5c')+';background:'+(bad?'#32141a':'#11291f')+';color:#fff;box-shadow:0 15px 40px rgba(0,0,0,.3)';document.body.appendChild(d);setTimeout(()=>d.remove(),2600)}
-</script><script src="/admin-intelligence.js"></script><script src="/voice-intelligence.js"></script></body></html>
+</script>
+
+<style id="muda-v13-overrides">
+:root{--mida:#0b1020;--mi-panel:#11182b;--mi-panel2:#0e1526;--mi-line:#23304a;--mi-soft:#8fa1bb;--mi-text:#f4f7ff;--mi-blue:#70a7ff;--mi-cyan:#5ce1e6;--mi-green:#51e4a0;--mi-amber:#ffca67;--mi-red:#ff7182;--mi-violet:#a78bfa}
+body{background:radial-gradient(900px 520px at 82% -10%,rgba(91,142,255,.18),transparent 55%),radial-gradient(900px 520px at 8% 0%,rgba(92,225,230,.09),transparent 50%),#070b16}.topbar{background:rgba(7,11,22,.76);border-bottom-color:#1b2740}.topbar-in{padding:11px 0}.topbar .brand{letter-spacing:.06em}.topbar .brand span{color:var(--mi-cyan)}.main{padding-top:10px}.nav{padding:14px 0 6px;gap:8px}.nav button{background:rgba(11,18,32,.7);border-color:#1d2940;color:#97a9c2}.nav button.active{background:linear-gradient(135deg,#1a3157,#163a54);border-color:#4d84be;box-shadow:0 8px 24px rgba(50,100,160,.16)}
+.owner-mission{display:grid;gap:14px}.mission-hero,.mission-panel,.signal-card{border:1px solid var(--mi-line);background:linear-gradient(180deg,rgba(17,24,43,.96),rgba(10,15,28,.96));box-shadow:0 24px 70px rgba(0,0,0,.18)}.mission-hero{display:grid;grid-template-columns:1fr 190px;gap:20px;padding:26px;border-radius:24px;align-items:center}.eyebrow,.kicker{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#7f94b2;font-weight:900}.mission-hero h1{font-size:34px;line-height:1.03;letter-spacing:-.02em;margin:9px 0 11px}.mission-hero h1 span{background:linear-gradient(90deg,#dfe9ff,#6fe0ff);-webkit-background-clip:text;background-clip:text;color:transparent}.mission-hero p{margin:0;color:var(--mi-soft);max-width:840px}.copilot-row{display:grid;grid-template-columns:1fr auto auto;gap:8px;margin-top:18px}.copilot-row input{min-width:0;padding:14px 15px;border-radius:14px;border:1px solid #293754;background:#090e1b;color:#fff;outline:none}.mi-voice,.mi-ask{border:1px solid #31415f;border-radius:14px;padding:0 15px;font-weight:900;color:#fff;background:#131d31}.mi-ask{border-color:#4a78bb;background:linear-gradient(135deg,#2057a5,#177f96)}.suggestions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.suggestions button{border:1px solid #2a3854;background:#0b1222;color:#aac0dd;padding:7px 10px;border-radius:999px;font-size:11px}.confidence-ring{border:1px solid #263650;background:radial-gradient(circle at 50% 40%,rgba(112,167,255,.13),transparent 62%),#0a1120;border-radius:24px;padding:24px 14px;text-align:center}.ring-num{font-size:54px;font-weight:950;letter-spacing:-.04em}.ring-label{font-size:11px;color:#a9bad1;text-transform:uppercase;letter-spacing:.12em}.ring-sub{font-size:10px;color:#6f829f;margin-top:6px}.signal-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:10px}.signal-card{border-radius:18px;padding:15px;text-align:left;cursor:pointer;transition:.18s transform,.18s border-color}.signal-card:hover{transform:translateY(-2px);border-color:#4a6f9e}.signal-card small{display:block;color:#758aa7;font-size:9px;letter-spacing:.14em;font-weight:900}.signal-card strong{display:block;font-size:27px;line-height:1.1;margin:8px 0 3px}.signal-card span{display:block;color:#8294ad;font-size:10px}.mission-grid{display:grid;grid-template-columns:1.6fr 1fr;gap:14px}.mission-grid.lower{grid-template-columns:1.1fr 1fr .9fr}.mission-panel{padding:17px;border-radius:20px}.mission-panel.wide{min-width:0}.panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}.panel-head h2{margin:4px 0 0;font-size:16px}.panel-head p{margin:5px 0 0;color:#8091aa;font-size:11px}.ghost{border:1px solid #283650;background:#0d1524;color:#bdd0e7;padding:8px 10px;border-radius:10px;font-size:11px}.decision-list,.radar-list,.risk-list{display:grid;gap:8px}.decision,.radar-row,.risk-row{border:1px solid #21304a;background:#0b1220;border-radius:14px;padding:12px}.decision{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start}.decision .rank{width:30px;height:30px;border-radius:10px;display:grid;place-items:center;background:#13233b;color:#8fc0ff;font-weight:900}.decision h3,.radar-row h3,.risk-row h3{margin:0;font-size:12px}.decision p,.radar-row p,.risk-row p{margin:4px 0 0;color:#778aa4;font-size:10px;line-height:1.45}.decision .why{font-size:10px;color:#a9bbd1}.decision button{border:1px solid #35547b;background:#102036;color:#d4e2f5;padding:8px 10px;border-radius:9px;font-size:10px}.opportunity{border:1px solid #2b3b57;background:radial-gradient(circle at 10% 0%,rgba(167,139,250,.14),transparent 44%),#0b1220;border-radius:16px;padding:16px;min-height:170px}.opp-score{font-size:40px;font-weight:950}.opp-title{font-size:16px;font-weight:850;line-height:1.2;margin-top:4px}.opp-meta{color:#7f93af;font-size:10px;margin-top:8px}.micro-actions,.quick-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}.micro-actions .ghost{font-size:10px}.story-table{overflow:auto}.story-row{display:grid;grid-template-columns:1fr 80px 80px 86px;gap:9px;padding:10px 0;border-bottom:1px solid #1c273b;align-items:center}.story-row:last-child{border-bottom:0}.story-title{font-size:11px;font-weight:750}.story-sub{font-size:9px;color:#71839e;margin-top:3px}.score-badge{display:inline-flex;justify-content:center;padding:7px 9px;border-radius:10px;background:#13233b;color:#b9d5ff;font-weight:900;font-size:11px}.mini-insight{display:grid;gap:8px}.mini-line{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #1c273b;font-size:11px}.mini-line:last-child{border-bottom:0}.mini-line span{color:#72859f}.mini-line b{color:#e8f0fc}.quick-actions button{border:1px solid #2a3953;background:#0c1524;color:#b8cae0;padding:10px 12px;border-radius:11px;font-size:10px}.action-surface{padding:18px}.command-result{margin-top:12px;padding:12px;border:1px dashed #2b3d5a;border-radius:12px;color:#93a7c0;font-size:11px;background:#09111e}.flash{animation:miPulse .8s ease}.spin{animation:miSpin .8s linear infinite}@keyframes miPulse{50%{box-shadow:0 0 0 8px rgba(92,225,230,.04)}}@keyframes miSpin{to{transform:rotate(360deg)}}
+@media(max-width:1100px){.mission-hero{grid-template-columns:1fr}.signal-strip{grid-template-columns:repeat(2,1fr)}.mission-grid,.mission-grid.lower{grid-template-columns:1fr}.story-row{grid-template-columns:1fr 70px 70px 76px}}@media(max-width:700px){.mission-hero h1{font-size:27px}.copilot-row{grid-template-columns:1fr}.signal-strip{grid-template-columns:1fr 1fr}.story-row{grid-template-columns:1fr 64px}.story-row>*:nth-child(3),.story-row>*:nth-child(4){display:none}.decision{grid-template-columns:auto 1fr}.decision button{grid-column:2;justify-self:start}}
+</style>
+
+
+<script id="muda-v13-engine">
+(() => {
+  const byId=id=>document.getElementById(id);
+  const escV13=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const nFmt=v=>new Intl.NumberFormat('id-ID',{maximumFractionDigits:0}).format(Number(v||0));
+  const money=v=>Number(v||0).toLocaleString('id-ID',{style:'currency',currency:'IDR',maximumFractionDigits:0});
+  let intel=null;
+  function showMission(){document.querySelectorAll('.view').forEach(x=>x.classList.add('hidden'));byId('view-mission')?.classList.remove('hidden');document.querySelectorAll('#nav button').forEach(x=>x.classList.toggle('active',x.dataset.view==='mission'));loadMission();}
+  async function loadJson(path){return api(path)}
+  async function loadMission(){
+    const refresh=byId('miRefresh'); if(refresh) refresh.disabled=true;
+    try{
+      intel=await loadJson('/api/admin/owner/intelligence');
+      const d=intel.decision||{}, perf=intel.performance||{}, aud=intel.audience||{}, rev=intel.revenue||{};
+      byId('miConfidence').textContent=(d.confidence??'—');
+      byId('miUpdated').textContent='live · '+new Date(intel.generated_at||Date.now()).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});
+      byId('miHeadline').textContent=d.headline||'Tidak ada keputusan kritis baru.';
+      byId('miOpportunity').textContent=(intel.opportunity_score??'—');
+      byId('miDecisionCount').textContent=nFmt((d.decisions||[]).length);
+      byId('miRevenue').textContent=money(rev.total||0);
+      byId('miSourceRisk').textContent=nFmt((d.degraded_sources||[]).length);
+      const health=Number(d.confidence||0); byId('miHealth').textContent=health?health+'%':'—'; byId('miHealthSub').textContent=health>=90?'healthy decision surface':health>=75?'watch decision surface':'attention required';
+      renderSuggestions(); renderDecisions(d.decisions||[]); renderTopStory(d.top_story); renderRadar(d.breaking_candidates||[]); renderRisks(d); renderAudience(aud); renderPerformance(perf); renderMoney(rev);
+    }catch(e){
+      byId('miHeadline').textContent='Intelligence layer belum tersedia: '+e.message;
+      byId('miCommandResult').textContent='Core dashboard tetap tersedia. Jalankan migration 015/016 dan gunakan server V13 untuk mengaktifkan decision layer.';
+    } finally { if(refresh) refresh.disabled=false; }
+  }
+  function renderSuggestions(){
+    const items=['Apa yang paling penting sekarang?','Apa yang harus saya publish sekarang?','Mengapa traffic turun?','Tampilkan source bermasalah','Buat plan untuk berita teratas'];
+    byId('miSuggestions').innerHTML=items.map((x,i)=>`<button data-q="${escV13(x)}">${escV13(x)}</button>`).join('');
+    byId('miSuggestions').querySelectorAll('button').forEach(b=>b.onclick=()=>{byId('miCopilot').value=b.dataset.q; askCopilot();});
+  }
+  function renderDecisions(rows){
+    byId('miDecisions').innerHTML=rows.length?rows.map((x,i)=>`<div class="decision"><div class="rank">${i+1}</div><div><h3>${escV13(x.title)}</h3><div class="why">${escV13(x.why||'Signal terukur dari production data.')}</div></div><button data-decision="${escV13(x.action||'')}">${x.kind==='risk'?'Review risk':'Open action'}</button></div>`).join(''):'<div class="muted">Tidak ada keputusan kritis baru.</div>';
+  }
+  function renderTopStory(x){
+    if(!x){byId('miTopStory').innerHTML='<div class="muted">Belum ada story opportunity yang cukup kuat.</div>';return;}
+    byId('miTopStory').innerHTML=`<div class="opp-score">${nFmt(x.owner_score)}</div><div class="opp-title">${escV13(x.title)}</div><div class="opp-meta">${escV13(x.category||'—')} · ${nFmt(x.views)} views · ${nFmt(x.likes)} likes · ${nFmt(x.shares)} shares</div><div class="actions"><button class="primary" id="miSimBtn">Simulate</button><button class="secondary" id="miPlanBtn">Build plan</button></div>`;
+    byId('miSimBtn').onclick=()=>simulate(x.id); byId('miPlanBtn').onclick=()=>buildPlan('Siapkan artikel '+x.id+' untuk prime time');
+  }
+  function renderRadar(rows){
+    const top=rows.slice(0,6); byId('miRadar').innerHTML=top.length?top.map((x,i)=>`<div class="radar-row"><div class="item-row"><div><h3>${escV13(x.title||'Breaking candidate '+(i+1))}</h3><p>score ${nFmt(x.score)} · status ${escV13(x.status||'unknown')} · ${x.detected_at?new Date(x.detected_at).toLocaleTimeString('id-ID'):''}</p></div><span class="score-badge">${nFmt(x.score)}</span></div></div>`).join(''):'<div class="muted">Belum ada accelerating event.</div>';
+  }
+  function renderRisks(d){
+    const rows=[]; (d.degraded_sources||[]).slice(0,6).forEach(x=>rows.push(`<div class="risk-row"><h3>${escV13(x.name)}</h3><p>${escV13(x.status)} · failures ${nFmt(x.failure_count)} · latency ${nFmt(x.last_latency_ms)}ms</p></div>`)); (d.alerts||[]).slice(0,4).forEach(x=>rows.push(`<div class="risk-row"><h3>${escV13(x.title)}</h3><p>${escV13(x.severity)} · ${x.created_at?new Date(x.created_at).toLocaleString('id-ID'):''}</p></div>`)); byId('miRisks').innerHTML=rows.join('')||'<div class="muted">Tidak ada operational risk terbuka.</div>';
+  }
+  function renderAudience(a){const e=a.by_event||{}; byId('miAudience').innerHTML=`<div class="mini-line"><span>Unique sessions</span><b>${nFmt(a.unique_sessions)}</b></div><div class="mini-line"><span>Events 24h</span><b>${nFmt(a.events)}</b></div><div class="mini-line"><span>Shares</span><b>${nFmt(e.share||0)}</b></div><div class="mini-line"><span>Video plays</span><b>${nFmt(e.video_play||0)}</b></div><div class="mini-line"><span>Ad clicks</span><b>${nFmt(e.ad_click||0)}</b></div>`;}
+  function renderPerformance(p){const rows=p.top_stories||[]; byId('miPerformance').innerHTML=rows.length?`<div>${rows.slice(0,8).map(x=>`<div class="story-row"><div><div class="story-title">${escV13(x.title)}</div><div class="story-sub">${escV13(x.category||'—')} · ${nFmt(x.views)} views · ${nFmt((x.likes||0)+(x.shares||0))} interactions</div></div><span class="score-badge">${nFmt(x.owner_score)}</span><span class="story-sub">${Number(x.engagement_rate||0).toFixed(2)}%</span><span class="story-sub">${x.published_at?new Date(x.published_at).toLocaleTimeString('id-ID'):''}</span></div>`).join('')}</div>`:'<div class="muted">Belum ada performance signal 24h.</div>'}
+  function renderMoney(r){byId('miMoney').innerHTML=`<div class="mini-line"><span>30d total</span><b>${money(r.total||0)}</b></div><div class="mini-line"><span>Run-rate</span><b>${money(r.run_rate_30d||0)}</b></div><div class="mini-line"><span>Next 30d est.</span><b>${money(r.estimated_next_30d||0)}</b></div><div class="mini-line"><span>Confidence</span><b>${nFmt(r.confidence)}%</b></div>`}
+  async function askCopilot(){const input=byId('miCopilot'); const text=input.value.trim(); if(!text)return; byId('miCommandResult').textContent='Copilot sedang memetakan intent dan risk…'; try{const d=await api('/api/admin/owner/copilot/plan',{method:'POST',body:JSON.stringify({text})}); if(d.ok){byId('miCommandResult').innerHTML=`Plan <b>${escV13(d.intent_key)}</b> · risk <b>${escV13(d.risk_level)}</b> · confidence <b>${Math.round(Number(d.confidence||0)*100)}%</b> · ${d.requires_confirmation?'confirmation required':'ready'}`;} else {byId('miCommandResult').textContent=d.error||'Plan gagal dibuat';}}catch(e){byId('miCommandResult').textContent=e.message;}}
+  async function executeNatural(text){byId('miCommandResult').textContent='Memproses command…'; try{const d=await api('/api/admin/owner/command',{method:'POST',body:JSON.stringify({text})}); if(d.requires_confirmation){byId('miCommandResult').innerHTML=`⚠️ <b>Confirmation gate</b> · ${escV13(d.intent_key)} · risk ${escV13(d.risk_level)} <button class="warn" id="miConfirmBtn">Confirm & execute</button>`; byId('miConfirmBtn').onclick=async()=>{try{await api('/api/admin/owner/command/'+d.command_id+'/confirm',{method:'POST'});byId('miCommandResult').textContent='Executed and audited.';loadMission();loadCommands?.();}catch(e){byId('miCommandResult').textContent=e.message}};}else{byId('miCommandResult').textContent='✓ Executed · '+(d.action||d.intent_key||'command'); loadMission(); if(typeof refreshAll==='function') refreshAll();}}catch(e){byId('miCommandResult').textContent='Command error: '+e.message;}}
+  async function buildPlan(text){await askCopilotText(text);}
+  async function askCopilotText(text){byId('miCopilot').value=text;await askCopilot();}
+  async function simulate(id){try{const d=await api('/api/admin/owner/simulate',{method:'POST',body:JSON.stringify({article_id:id,action:'feature'})}); const s=d.simulation;openModal('Scenario simulator',`<div class="grid-3"><div class="metric"><span>Current score</span><b>${nFmt(s.current_score)}</b></div><div class="metric"><span>Projected score</span><b>${nFmt(s.projected_score)}</b></div><div class="metric"><span>Confidence</span><b>${nFmt(s.confidence)}%</b></div></div><div class="panel" style="margin-top:12px"><p><b>Projected views</b>: ${nFmt(s.projected_views_low)} — ${nFmt(s.projected_views_high)}</p><p><b>Projected engagement</b>: ${Number(s.projected_engagement||0).toFixed(2)}%</p><p><b>Risk</b>: ${escV13(s.risk)}</p><p class="muted">Simulator bersifat estimasi berbasis production signals; bukan jaminan.</p></div>`);}catch(e){toast(e.message,true)}}
+  function startVoice(){const R=window.SpeechRecognition||window.webkitSpeechRecognition;if(!R){toast('Browser ini tidak mendukung SpeechRecognition',true);return;}const r=new R();r.lang='id-ID';r.interimResults=false;r.maxAlternatives=1;r.onstart=()=>{byId('miVoiceBtn').textContent='● Listening…';};r.onend=()=>{byId('miVoiceBtn').textContent='🎙 Voice';};r.onerror=()=>{byId('miVoiceBtn').textContent='🎙 Voice';};r.onresult=e=>{const text=e.results[0][0].transcript||'';byId('miCopilot').value=text;executeNatural(text);saveVoice(text,'processing');};r.start();}
+  async function saveVoice(transcript,status){try{await api('/api/admin/owner/voice/session',{method:'POST',body:JSON.stringify({locale:'id-ID',provider:'browser',status,transcript,response:'',conversation_id:null})});}catch{}}
+  window.MudaOwnerV13Run = executeNatural;
+  document.addEventListener('DOMContentLoaded',()=>{
+    byId('miAskBtn')?.addEventListener('click',askCopilot); byId('miVoiceBtn')?.addEventListener('click',startVoice); byId('miRefresh')?.addEventListener('click',loadMission);
+    byId('miCopilot')?.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();askCopilot();}});
+    document.querySelectorAll('[data-jump]').forEach(b=>b.addEventListener('click',()=>document.querySelector(`[data-view="${b.dataset.jump}"]`)?.click()));
+    document.querySelectorAll('[data-cmd]').forEach(b=>b.addEventListener('click',()=>{byId('miCopilot').value=b.dataset.cmd;executeNatural(b.dataset.cmd)}));
+    // Mission becomes the default surface after the core app is authenticated.
+    setTimeout(()=>{if(!byId('app')?.classList.contains('hidden')) showMission();},250);
+    // Patch legacy nav loader to recognize Mission without disrupting existing modules.
+    const nav=byId('nav'); nav?.addEventListener('click',e=>{const b=e.target.closest('button[data-view]');if(!b)return;if(b.dataset.view==='mission'){showMission();}},true);
+  });
+})();
+</script>
+
+<script src="/admin-intelligence.js"></script>
+<script src="/voice-intelligence.js"></script>
+
+<script id="muda-v14-evolution-engine">
+(() => {
+  const E=id=>document.getElementById(id);
+  const xe=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const nf=v=>new Intl.NumberFormat('id-ID',{maximumFractionDigits:0}).format(Number(v||0));
+  async function loadEvolution(){
+    try{
+      const [f,g,b,t,a]=await Promise.all([
+        api('/api/admin/owner/features'),api('/api/admin/owner/goals'),api('/api/admin/owner/briefing'),api('/api/admin/owner/timeline'),api('/api/admin/owner/autonomy')
+      ]);
+      renderFeature(f);renderGoals(g.goals||[]);renderBrief(b.brief);renderTimeline(t.events||[]);renderAutonomy(a.policies||[]);
+    }catch(e){E('evoBrief').innerHTML='<div class="muted">Evolution layer belum aktif: '+xe(e.message)+'</div>'}
+  }
+  function renderFeature(d){const c=d.counts||{};E('evoCoverageSummary').innerHTML=Object.entries(c).map(([k,v])=>`<span class="coverage-chip">${xe(k)} · <b>${nf(v)}</b></span>`).join('')+`<span class="coverage-chip">TOTAL · <b>${nf(d.total)}</b></span>`;E('evoCoverage').innerHTML=(d.features||[]).map(x=>`<div class="coverage-item"><strong>${xe(x.name||x.capability)}</strong><small>${xe(x.area)} · ${xe(x.key||x.feature_key)}</small><span class="${xe(x.status)}">${xe(x.status)}</span></div>`).join('')||'<div class="muted">Feature catalog kosong.</div>'}
+  function renderGoals(rows){E('evoGoals').innerHTML=rows.length?rows.map(x=>{const m=x.owner_goal_metrics?.[0]||{};let pct=x.target_value?Math.max(0,Math.min(100,Number(m.observed_value||0)/Number(x.target_value)*100)):0;return `<div class="evo-goal"><div class="evo-goal-head"><h3>${xe(x.title)}</h3><span class="tag">${xe(x.horizon||'active')}</span></div><p>${nf(m.observed_value||0)} / ${nf(x.target_value||0)} ${xe(x.unit||'')} · confidence ${Math.round(Number(m.confidence||0)*100)}%</p><div class="goal-bar"><i style="width:${pct}%"></i></div></div>`}).join(''):'<div class="muted">Belum ada Owner Goal. Tambahkan target bisnis/editorial pertama Anda.</div>'}
+  function renderBrief(b){if(!b){E('evoBrief').innerHTML='<div class="muted">Belum ada briefing.</div>';return}E('evoBrief').innerHTML=`<h3>${xe(b.headline||'No critical decision')}</h3><p>Decision confidence <b>${nf(b.decision_confidence)}%</b></p><div class="brief-points">${(b.recommended_next_actions||[]).slice(0,5).map(x=>`<div><b>${xe(x.title)}</b><br>${xe(x.why||'')}</div>`).join('')||'<div>Tidak ada prioritas kritis baru.</div>'}</div>`}
+  function renderTimeline(rows){E('evoTimeline').innerHTML=rows.length?rows.map(x=>`<div class="timeline-row"><time>${xe(new Date(x.at).toLocaleString('id-ID'))}</time><div class="tt">${xe(x.type)}</div><div><strong>${xe(x.title)}</strong><br><span>${xe(x.detail||'')}</span></div><span class="timeline-risk ${xe(x.risk)}">${xe(x.risk)}</span></div>`).join(''):'<div class="muted">Belum ada activity timeline.</div>'}
+  function renderAutonomy(rows){E('evoAutonomy').innerHTML=rows.slice(0,18).map(x=>`<div class="evo-goal"><div class="evo-goal-head"><h3>${xe(x.action_key)}</h3><span class="tag">${xe(x.mode)}</span></div><p>${x.enabled?'enabled':'disabled'} · max risk ${xe(x.max_risk)} · role ${xe(x.min_role)}</p></div>`).join('')||'<div class="muted">Autonomy policy belum aktif.</div>'}
+  async function generateBrief(){try{const r=await api('/api/admin/owner/briefing/generate',{method:'POST',body:JSON.stringify({brief_type:'morning'})});toast('Briefing dibuat');renderBrief({headline:r.brief.payload?.headline,decision_confidence:r.brief.payload?.confidence, recommended_next_actions:r.brief.payload?.decisions});}catch(e){toast(e.message,true)}}
+  async function addGoal(){const title=prompt('Goal Owner apa yang ingin dicapai?');if(!title)return;const horizon=prompt('Horizon, misalnya 7 hari / Q4 2026','7 hari');const target=prompt('Target numerik (boleh kosong)','100');try{await api('/api/admin/owner/goals',{method:'POST',body:JSON.stringify({title,horizon,target_value:target,unit:'score'})});toast('Goal dibuat');loadEvolution();}catch(e){toast(e.message,true)}}
+  E('evoRefresh')?.addEventListener('click',loadEvolution);E('evoTimelineRefresh')?.addEventListener('click',loadEvolution);E('evoMorning')?.addEventListener('click',generateBrief);E('evoGoalAdd')?.addEventListener('click',addGoal);
+  document.querySelector('#nav')?.addEventListener('click',e=>{const b=e.target.closest('button[data-view="evolution"]');if(b)setTimeout(loadEvolution,60)},true);
+})();
+</script>
+
+</body></html>
