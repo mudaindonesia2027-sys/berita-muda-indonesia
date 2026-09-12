@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#07111f" />
+  <link rel="manifest" href="/manifest.webmanifest?v=v19-040" />
   <meta name="description" content="Berita Muda Indonesia — berita, video, wilayah, dan pengalaman media cerdas untuk Indonesia." />
   <title>Berita Muda Indonesia</title>
   <link rel="icon" href="/assets/logo-berita-muda-round.png" />
@@ -12,7 +13,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css?v=v19-039" />
   <link rel="stylesheet" href="/public-premium.css?v=v19-039" />
-  <link rel="stylesheet" href="/public-experience-039.css?v=v19-039" />
+  <link rel="stylesheet" href="/public-experience-040.css?v=v19-040" />
+  <link rel="stylesheet" href="/public-experience-041.css?v=v19-041">
 </head>
 <body>
   <div class="public-shell">
@@ -78,23 +80,24 @@
           <div>
             <span class="eyebrow">LIPUTAN WILAYAH</span>
             <h2>Jawa Tengah, lebih dekat.</h2>
-            <p>Pilih wilayah untuk melihat berita, video, dan perkembangan lokal yang relevan.</p>
+            <p>Jelajahi 35 kabupaten/kota Jawa Tengah melalui kanal wilayah yang bisa langsung difilter.</p>
           </div>
-          <span class="live-region">LIVE REGIONAL</span>
+          <div class="region-hub-actions"><span class="live-region">LIVE REGIONAL</span><button class="region-open-btn" id="regionExploreBtn" type="button">Jelajahi wilayah →</button></div>
         </div>
-        <div class="region-chips" id="regionalChips">
-          <button type="button" class="region-chip active" data-region-query="Jawa Tengah"><strong>Jawa Tengah</strong><span>Semua wilayah</span></button>
-          <button type="button" class="region-chip" data-region-query="Purworejo"><strong>Purworejo</strong><span>Kabupaten</span></button>
-          <button type="button" class="region-chip" data-region-query="Kebumen"><strong>Kebumen</strong><span>Kabupaten</span></button>
-          <button type="button" class="region-chip" data-region-query="Banyumas"><strong>Banyumas</strong><span>Kabupaten</span></button>
-          <button type="button" class="region-chip" data-region-query="Cilacap"><strong>Cilacap</strong><span>Kabupaten</span></button>
-          <button type="button" class="region-chip" data-region-query="Semarang"><strong>Semarang</strong><span>Kota/Kabupaten</span></button>
-          <button type="button" class="region-chip" data-region-query="Surakarta"><strong>Surakarta</strong><span>Kota</span></button>
-          <button type="button" class="region-chip" data-region-query="Pekalongan"><strong>Pekalongan</strong><span>Kota/Kabupaten</span></button>
+        <div class="region-group-strip" id="regionGroupStrip" aria-label="Kelompok wilayah Jawa Tengah">
+          <button class="region-group active" data-region-group="all" type="button"><span>◎</span><b>Semua Jateng</b><small>35 wilayah</small></button>
+          <button class="region-group" data-region-group="kedulane" type="button"><span>◈</span><b>Kedu</b><small>6 wilayah</small></button>
+          <button class="region-group" data-region-group="banyumasan" type="button"><span>✦</span><b>Banyumasan</b><small>4 wilayah</small></button>
+          <button class="region-group" data-region-group="semarangan" type="button"><span>◇</span><b>Semarangan</b><small>5 wilayah</small></button>
+          <button class="region-group" data-region-group="pantura-barat" type="button"><span>◒</span><b>Pantura Barat</b><small>5 wilayah</small></button>
+          <button class="region-group" data-region-group="pantura-timur" type="button"><span>◐</span><b>Pantura Timur</b><small>5 wilayah</small></button>
+          <button class="region-group" data-region-group="solo-raya" type="button"><span>◉</span><b>Solo Raya</b><small>7 wilayah</small></button>
+          <button class="region-group" data-region-group="selatan" type="button"><span>△</span><b>Jateng Selatan</b><small>3 wilayah</small></button>
         </div>
+        <div class="region-chips region-chips-extended" id="regionalChips"></div>
       </section>
 
-      <section class="hero-grid">
+      <section class="hero-grid"><section class="hero-grid">
         <article class="hero-card" id="heroCard">
           <div class="hero-image" id="heroImage"></div>
           <div class="hero-shade"></div>
@@ -155,17 +158,7 @@
 
       <section class="category-showcase" id="categoryTiles" aria-label="Kategori berita">
         <div class="section-head"><div><span class="eyebrow">KANAL UTAMA</span><h2>Jelajahi berdasarkan kategori</h2></div></div>
-        <div class="category-grid">
-          <button data-category="NASIONAL" type="button"><span>01</span><strong>Nasional</strong><small>Berita dalam negeri</small></button>
-          <button data-category="INTERNASIONAL" type="button"><span>02</span><strong>Dunia</strong><small>Isu internasional</small></button>
-          <button data-category="EKONOMI" type="button"><span>03</span><strong>Ekonomi</strong><small>Bisnis & pasar</small></button>
-          <button data-category="POLITIK" type="button"><span>04</span><strong>Politik</strong><small>Kebijakan & pemerintahan</small></button>
-          <button data-category="HUKUM" type="button"><span>05</span><strong>Hukum</strong><small>Regulasi & peristiwa</small></button>
-          <button data-category="TEKNOLOGI" type="button"><span>06</span><strong>Teknologi</strong><small>Digital & inovasi</small></button>
-          <button data-category="OLAHRAGA" type="button"><span>07</span><strong>Sport</strong><small>Olahraga</small></button>
-          <button data-category="HIBURAN" type="button"><span>08</span><strong>Hiburan</strong><small>Selebritas & budaya</small></button>
-          <button data-category="LIFESTYLE" type="button"><span>09</span><strong>Lifestyle</strong><small>Gaya hidup & inspirasi</small></button>
-        </div>
+        <div class="category-grid category-grid-040"><button class="category-tile-040" data-category="NASIONAL" type="button"><span class="category-icon">▣</span><span class="category-number">01</span><strong>Nasional</strong><small>Berita dalam negeri</small><em>Masuk kanal →</em></button><button class="category-tile-040" data-category="INTERNASIONAL" type="button"><span class="category-icon">◎</span><span class="category-number">02</span><strong>Dunia</strong><small>Isu internasional</small><em>Masuk kanal →</em></button><button class="category-tile-040" data-category="EKONOMI" type="button"><span class="category-icon">▤</span><span class="category-number">03</span><strong>Ekonomi</strong><small>Bisnis & pasar</small><em>Masuk kanal →</em></button><button class="category-tile-040" data-category="POLITIK" type="button"><span class="category-icon">◈</span><span class="category-number">04</span><strong>Politik</strong><small>Kebijakan & pemerintahan</small><em>Masuk kanal →</em></button><button class="category-tile-040" data-category="HUKUM" type="button"><span class="category-icon">⚖</span><span class="category-number">05</span><strong>Hukum</strong><small>Regulasi & peristiwa</small><em>Masuk kanal →</em></button><button class="category-tile-040" data-category="TEKNOLOGI" type="button"><span class="category-icon">⌁</span><span class="category-number">06</span><strong>Teknologi</strong><small>Digital & inovasi</small><em>Masuk kanal →</em></button><button class="category-tile-040" data-category="OLAHRAGA" type="button"><span class="category-icon">◉</span><span class="category-number">07</span><strong>Sport</strong><small>Olahraga</small><em>Masuk kanal →</em></button><button class="category-tile-040" data-category="HIBURAN" type="button"><span class="category-icon">✦</span><span class="category-number">08</span><strong>Hiburan</strong><small>Selebritas & budaya</small><em>Masuk kanal →</em></button><button class="category-tile-040" data-category="LIFESTYLE" type="button"><span class="category-icon">✿</span><span class="category-number">09</span><strong>Lifestyle</strong><small>Gaya hidup & inspirasi</small><em>Masuk kanal →</em></button></div>
       </section>
 
       <section class="content-layout">
@@ -194,12 +187,13 @@
             <div id="videoGrid" class="video-grid"><div class="video-empty">Memuat video…</div></div>
           </section>
 
-          <section class="side-card ad-panel" id="adPanel">
-            <span class="eyebrow">BERIKLAN DI MUDA</span>
-            <h3>Jangkau audiens yang tepat.</h3>
-            <p>Homepage, video, regional, native story, dan campaign interaktif.</p>
-            <div class="ad-tags"><span>Homepage</span><span>Video</span><span>Regional</span><span>Campaign</span></div>
-            <button class="primary-btn" id="advertiseBtn" type="button">Lihat paket iklan →</button>
+          <section class="side-card ad-panel intelligent-ad-panel" id="adPanel">
+            <div class="ad-card-top"><div><span class="eyebrow">MUDA BUSINESS</span><h3>Paket iklan cerdas.</h3></div><span class="ad-signal" id="adMarketSignal">Memuat pasar…</span></div>
+            <p>Harga, masa tayang, dan ketersediaan ditampilkan dari rate card aktif. Tidak ada angka fiktif.</p>
+            <div class="ad-tags"><span>Homepage</span><span>Video</span><span>Regional</span><span>Native</span></div>
+            <div class="ad-market-card" id="adMarketCard"><div class="ad-market-loading">Memuat rate card aktif…</div></div>
+            <div id="adIntelligence041" class="ad-intel-041"><div>Mesin harga: menghitung status aktif, periode, dan fluktuasi dari rate card nyata…</div></div>
+            <div class="ad-actions"><button class="primary-btn" id="advertiseBtn" type="button">Lihat paket & ajukan →</button><button class="outline-btn" id="adRefreshBtn" type="button">↻ Perbarui harga</button></div>
           </section>
 
           <section class="side-card live-card">
@@ -227,7 +221,7 @@
         <div class="footer-brand"><img src="/assets/logo-berita-muda-round.png" alt="Berita Muda Indonesia" /><div><strong>BERITA MUDA<br>INDONESIA</strong><span>Informasi cepat · akurat · terpercaya</span></div></div>
         <div><b>Redaksi</b><a href="/about.html">Tentang</a><a href="/editorial.html">Pedoman Redaksi</a><a href="/contact.html">Kontak</a></div>
         <div><b>Layanan</b><a href="#videoPanel">Video</a><a href="/contact.html?topic=iklan">Iklan</a><a href="/contact.html?topic=kolaborasi">Kolaborasi</a></div>
-        <div><b>Wilayah</b><a href="#" data-region-query="Purworejo">Purworejo</a><a href="#" data-region-query="Jawa Tengah">Jawa Tengah</a><a href="#" data-region-query="Semarang">Semarang</a></div>
+        <div><b>Wilayah</b><a href="#" data-region-query="Jawa Tengah">Semua Jawa Tengah</a><a href="#" data-region-query="Purworejo">Purworejo</a><a href="#" data-region-query="Kebumen">Kebumen</a><a href="#" data-region-query="Banyumas">Banyumas</a><a href="#" data-region-query="Semarang">Semarang</a><a href="#" data-region-query="Surakarta">Surakarta</a><button class="footer-more-link" id="footerRegionBtn" type="button">35 kabupaten/kota →</button></div>
         <form id="newsletterForm" class="newsletter"><b>Ikuti Pembaruan</b><p>Ringkasan berita dan perkembangan pilihan Muda.</p><div><input type="email" placeholder="Email Anda" required /><button type="submit">→</button></div></form>
       </div>
       <div class="container footer-bottom"><span>© <span id="year"></span> MUDA Indonesia</span><span>Berita Muda Indonesia · Intelligent Media</span></div>
@@ -238,8 +232,11 @@
     <div class="modal hidden" id="articleModal" role="dialog" aria-modal="true"><div class="modal-backdrop" data-close-modal></div><article class="modal-card article-modal"><button class="modal-close" data-close-modal>×</button><div id="modalBody"></div></article></div>
     <div class="toast-zone" id="toastZone"></div>
   </div>
-  <script src="/app.js?v=v19-039" defer></script>
-  <script src="/site-runtime.js?v=v19-039" defer></script>
-  <script src="/intelligent-experience.js?v=v19-039" defer></script>
+  <script src="/app.js?v=v19-040" defer></script>
+  <script src="/site-runtime.js?v=v19-040" defer></script>
+  <script src="/intelligent-experience.js?v=v19-040" defer></script>
+  <script src="/public-auth-040.js?v=v19-040" defer></script>
+  <script src="/public-intelligence-040.js?v=v19-040" defer></script>
+  <script src="/public-intelligence-041.js?v=v19-041" defer></script>
 </body>
 </html>
