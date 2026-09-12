@@ -244,6 +244,22 @@
     });
   }
 
+  function articleRegion(item) {
+    return [item?.city, item?.regency, item?.district, item?.province, item?.region]
+      .map(v => String(v || '').trim()).filter(Boolean).join(' · ');
+  }
+
+  function isSavedArticle(id) { return Boolean(id && localStorage.getItem(`muda:saved:${id}`) === '1'); }
+
+  function toggleSavedArticle(item) {
+    if (!item?.id) return false;
+    const key = `muda:saved:${item.id}`;
+    const saved = localStorage.getItem(key) === '1';
+    if (saved) { localStorage.removeItem(key); toast('Berita dihapus dari Simpan.', 'success'); }
+    else { localStorage.setItem(key, '1'); toast('Berita disimpan.', 'success'); }
+    return !saved;
+  }
+
   function articleCard(item, index) {
     const card = document.createElement('article');
     card.className = `article-card${index === 0 && !state.category && !state.query ? ' featured' : ''}`;
@@ -252,6 +268,8 @@
     const summary = stripHtml(item?.summary || item?.content || item?.content_html || 'Ringkasan berita belum tersedia.');
     const canonical = categoryLabel(item?.category);
     const source = item?.source || 'Berita Muda';
+    const author = item?.author_name || item?.author || '';
+    const region = articleRegion(item);
     card.innerHTML = `
       <div class="article-thumb" ${bg ? `style="background-image:url('${escapeHtml(bg)}')"` : ''}></div>
       <div class="article-body">
@@ -261,12 +279,36 @@
         </div>
         <h3>${escapeHtml(title)}</h3>
         <p>${escapeHtml(summary)}</p>
+        <div class="article-byline-row">${author ? `<span>Oleh ${escapeHtml(author)}</span>` : '<span>Redaksi Berita Muda</span>'}${region ? `<span>• ${escapeHtml(region)}</span>` : ''}</div>
         <div class="article-foot">
           <span>${escapeHtml(source)}</span>
-          <span class="read-link">Baca →</span>
+          <span class="article-engagement">
+            <button type="button" class="mini-action js-like">♥ ${Number(item?.likes || 0).toLocaleString('id-ID')}</button>
+            <button type="button" class="mini-action js-share">↗ Bagikan</button>
+            <button type="button" class="mini-action js-save">${isSavedArticle(item.id) ? '🔖 Tersimpan' : '🔖 Simpan'} </button>
+            <span class="read-link">Baca →</span>
+          </span>
         </div>
       </div>`;
     card.addEventListener('click', () => openArticle(item.id, item));
+    card.querySelector('.js-like')?.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      const ok = await mutateCounter(`/api/articles/${encodeURIComponent(item.id)}/like`, 'Suka tersimpan.');
+      if (ok) {
+        item.likes = Number(item.likes || 0) + 1;
+        const el = card.querySelector('.js-like');
+        if (el) el.textContent = `♥ ${Number(item.likes).toLocaleString('id-ID')}`;
+      }
+    });
+    card.querySelector('.js-share')?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      shareArticle(item);
+    });
+    card.querySelector('.js-save')?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const saved = toggleSavedArticle(item);
+      event.currentTarget.textContent = saved ? '🔖 Tersimpan' : '🔖 Simpan';
+    });
     return card;
   }
 
@@ -294,7 +336,29 @@
     if (els.heroSummary) els.heroSummary.textContent = stripHtml(item.summary || item.content || item.content_html || 'Ringkasan berita terbaru dari newsroom.');
     if (els.heroDate) els.heroDate.textContent = fmtDate(articleTime(item));
     if (els.heroViews) els.heroViews.textContent = `${Number(item.views || 0).toLocaleString('id-ID')} views`;
+    const byline = item.author_name || item.author || item.source || 'Berita Muda';
+    const region = articleRegion(item);
+    if (els.heroByline) els.heroByline.textContent = region ? `${byline} · ${region}` : byline;
     if (els.ticker) els.ticker.textContent = state.breaking[0]?.title || item.title || 'Berita terbaru';
+    const heroLike = document.getElementById('heroLike');
+    const heroShare = document.getElementById('heroShare');
+    if (heroLike) {
+      heroLike.textContent = `♥ Suka ${Number(item.likes || 0).toLocaleString('id-ID')}`;
+      heroLike.onclick = async (event) => {
+        event.stopPropagation();
+        const ok = await mutateCounter(`/api/articles/${encodeURIComponent(item.id)}/like`, 'Suka tersimpan.');
+        if (ok) {
+          item.likes = Number(item.likes || 0) + 1;
+          heroLike.textContent = `♥ Suka ${Number(item.likes).toLocaleString('id-ID')}`;
+        }
+      };
+    }
+    if (heroShare) {
+      heroShare.onclick = (event) => {
+        event.stopPropagation();
+        shareArticle(item);
+      };
+    }
   }
 
   function renderCompact() {
@@ -597,10 +661,25 @@
     run().catch(() => {});
   }
 
+  async function loadComments(contentType, contentId) {
+    try {
+      const rows = await getJson(`/api/comments?content_type=${encodeURIComponent(contentType)}&content_id=${encodeURIComponent(contentId)}&limit=50`);
+      return Array.isArray(rows) ? rows : [];
+    } catch { return []; }
+  }
+
+  async function renderCommentsPanel(item) {
+    const comments = await loadComments('article', item.id);
+    const list = comments.length
+      ? comments.map(c => `<article class="comment-item"><div class="comment-avatar">${escapeHtml(String(c.user_id || 'MU').slice(0,2).toUpperCase())}</div><div><strong>Pembaca MUDA</strong><time>${escapeHtml(fmtDate(c.created_at))}</time><p>${escapeHtml(c.body || '')}</p></div></article>`).join('')
+      : '<div class="comment-empty">Belum ada komentar. Jadilah pembaca pertama yang ikut berdiskusi.</div>';
+    return `<section class="article-comments" aria-label="Komentar pembaca"><div class="comments-head"><div><span class="eyebrow">KOMUNITAS PEMBACA</span><h3>Komentar</h3><p>${comments.length} komentar terverifikasi tampil.</p></div><a class="comment-login" href="/contact.html?topic=komentar">Masuk / daftar untuk berkomentar</a></div><div class="comment-list">${list}</div></section>`;
+  }
+
   async function openArticle(id, fallback) {
     els.modal?.classList.remove('hidden');
     document.body.style.overflow = 'hidden';
-    if (els.modalBody) els.modalBody.innerHTML = '<div class="modal-content"><span class="eyebrow">MEMUAT ARTIKEL</span><h2>Menyiapkan berita…</h2></div>';
+    if (els.modalBody) els.modalBody.innerHTML = '<div class="modal-content reader-loading"><span class="eyebrow">MEMUAT ARTIKEL</span><h2>Menyiapkan berita…</h2></div>';
     let item = fallback;
     try {
       const fresh = await getJson(`/api/articles/${encodeURIComponent(id)}`);
@@ -613,32 +692,38 @@
     const bg = imageUrl(item);
     const sourceUrl = getSourceUrl(item);
     const body = renderArticleContent(item);
+    const region = articleRegion(item) || 'Indonesia';
+    const author = item.author_name || item.author || 'Redaksi Berita Muda';
+    const source = item.source || 'Berita Muda Indonesia';
+    const saved = isSavedArticle(item.id);
     if (els.modalBody) {
       els.modalBody.innerHTML = `
-        ${bg ? `<img class="modal-hero" src="${escapeHtml(bg)}" alt="${escapeHtml(item.title || 'Berita')}">` : ''}
-        <div class="modal-content">
-          <span class="eyebrow">${escapeHtml(categoryLabel(item.category).toUpperCase())}</span>
-          <h2>${escapeHtml(item.title || 'Berita terbaru')}</h2>
-          <div class="modal-meta-row"><span>${escapeHtml(item.source || 'Berita Muda')}</span><span>${escapeHtml(fmtDate(articleTime(item)))}</span></div>
-          ${item.author_name ? `<p class="article-byline">${escapeHtml(item.author_name)}</p>` : ''}
-          ${item.summary ? `<p class="summary">${escapeHtml(stripHtml(item.summary))}</p>` : ''}
-          <div class="article-html">${body}</div>
-          <div class="share-row">
-            <button class="action" id="modalLike">♥ Suka <span>${Number(item.likes || 0)}</span></button>
-            <button class="action" id="modalShare">↗ Bagikan</button>
-            ${sourceUrl ? `<a class="action" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">Sumber asli ↗</a>` : ''}
+        <div class="reader-shell">
+          ${bg ? `<div class="reader-hero"><img class="modal-hero" src="${escapeHtml(bg)}" alt="${escapeHtml(item.title || 'Berita')}" loading="eager"><div class="reader-hero-overlay"><span class="tag tag-red">${escapeHtml(categoryLabel(item.category).toUpperCase())}</span><span class="reader-region">${escapeHtml(region)}</span></div></div>` : ''}
+          <div class="reader-content">
+            <div class="reader-kicker">${escapeHtml(categoryLabel(item.category).toUpperCase())} · ${escapeHtml(region)}</div>
+            <h1>${escapeHtml(item.title || 'Berita terbaru')}</h1>
+            <p class="reader-deck">${escapeHtml(stripHtml(item.summary || ''))}</p>
+            <div class="reader-byline"><div><strong>Oleh ${escapeHtml(author)}</strong><span>${escapeHtml(source)} · ${escapeHtml(fmtDate(articleTime(item)))}</span></div><div class="reader-stat">${Number(item.views || 0).toLocaleString('id-ID')} dibaca</div></div>
+            <div class="reader-actions"><button class="action" id="modalLike">♥ <span>${Number(item.likes || 0).toLocaleString('id-ID')}</span> Suka</button><button class="action" id="modalShare">↗ Bagikan</button><button class="action" id="modalSave">🔖 ${saved ? 'Tersimpan' : 'Simpan'}</button>${sourceUrl ? `<a class="action" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">Sumber ↗</a>` : ''}</div>
+            <div class="reader-body article-html">${body}</div>
+            <div class="reader-footnote"><span>Lokasi liputan: ${escapeHtml(region)}</span><span>Source: ${escapeHtml(source)}</span>${item.editor_name ? `<span>Editor: ${escapeHtml(item.editor_name)}</span>` : ''}</div>
+            <div id="readerComments" class="comments-mount"><div class="comment-empty">Memuat komentar…</div></div>
           </div>
         </div>`;
       $('#modalLike')?.addEventListener('click', async () => {
         const ok = await mutateCounter(`/api/articles/${encodeURIComponent(item.id)}/like`, 'Suka tersimpan.');
         if (ok) item.likes = Number(item.likes || 0) + 1;
-        const span = $('#modalLike span');
-        if (span) span.textContent = String(item.likes || 0);
+        const span = $('#modalLike span'); if (span) span.textContent = Number(item.likes || 0).toLocaleString('id-ID');
       });
       $('#modalShare')?.addEventListener('click', () => shareArticle(item));
+      $('#modalSave')?.addEventListener('click', (e) => { const on = toggleSavedArticle(item); e.currentTarget.textContent = `🔖 ${on ? 'Tersimpan' : 'Simpan'}`; });
+      renderCommentsPanel(item).then(html => { const mount = $('#readerComments'); if (mount) mount.innerHTML = html; });
     }
     registerView(item.id);
     trackEvent('article_open', 'article', item.id);
+    const canonicalUrl = `${window.location.origin}/berita/${encodeURIComponent(item.id)}`;
+    try { window.history.replaceState({}, '', canonicalUrl); } catch {}
   }
 
   async function openVideo(video) {
@@ -814,6 +899,8 @@
     els.newsletterForm?.addEventListener('submit', submitNewsletter);
   }
 
+  window.openArticle = openArticle;
+
   async function bootstrap() {
     applyTheme();
     bindEvents();
@@ -840,7 +927,31 @@
 
     const params = new URLSearchParams(window.location.search);
     const articleId = params.get('article');
+    const urlQuery = params.get('q');
+    if (urlQuery) { state.query = urlQuery.trim(); if (els.search) els.search.value = state.query; await loadArticles(); }
     if (articleId) openArticle(articleId);
+    $$('.region-chip').forEach(btn => btn.addEventListener('click', async () => {
+      $$('.region-chip').forEach(x => x.classList.remove('active'));
+      btn.classList.add('active');
+      const q = btn.dataset.regionQuery || '';
+      state.category = '';
+      state.query = q === 'Jawa Tengah' ? '' : q;
+      if (els.search) els.search.value = state.query;
+      await loadArticles();
+      renderHero(); renderCompact(); renderTrending();
+      document.querySelector('.content-layout')?.scrollIntoView({behavior:'smooth',block:'start'});
+    }));
+    $$('[data-region-query]:not(.region-chip)').forEach(btn => btn.addEventListener('click', async (event) => {
+      event.preventDefault();
+      const q = btn.dataset.regionQuery || '';
+      state.category = '';
+      state.query = q === 'Jawa Tengah' ? '' : q;
+      if (els.search) els.search.value = state.query;
+      await loadArticles();
+      renderHero(); renderCompact(); renderTrending();
+      document.querySelector('.content-layout')?.scrollIntoView({behavior:'smooth',block:'start'});
+    }));
+    $('#advertiserQuickCta')?.addEventListener('click', () => $('#advertiseBtn')?.click());
 
     state.autoTimer = setInterval(async () => {
       await Promise.all([
