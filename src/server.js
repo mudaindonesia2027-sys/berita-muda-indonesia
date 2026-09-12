@@ -2992,8 +2992,6 @@ app.post(
 
   interactionLimiter,
 
-  requireUser,
-
   counter(
     'increment_video_views',
     'view',
@@ -8316,6 +8314,75 @@ app.post('/api/admin/owner/business/contacts', admin, ownerWrite, async (req,res
 app.get('/api/admin/owner/business/widgets', admin, async (_req,res)=>{try{const {data,error}=await adminClient.from('owner_experience_widgets').select('*').order('sort_order');if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}});
 app.patch('/api/admin/owner/business/widgets/:id', admin, ownerWrite, async (req,res)=>{try{const b=req.body||{};const patch={updated_by:req.user.id,updated_at:new Date().toISOString()};for(const k of ['title','provider','config','active','sort_order'])if(b[k]!==undefined)patch[k]=b[k];const {data,error}=await adminClient.from('owner_experience_widgets').update(patch).eq('id',req.params.id).select().single();if(error)throw error;await auditOwnerAction(req,'experience_widget_updated','experience_widget',data.id,{fields:Object.keys(patch)});res.json(data);}catch(error){res.status(400).json({error:error.message});}});
 app.get('/api/admin/owner/business/weather', admin, async (req,res)=>{try{const lat=Number(req.query.lat),lon=Number(req.query.lon);if(!Number.isFinite(lat)||!Number.isFinite(lon))return res.status(400).json({error:'lat/lon wajib'});const url=`https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m&timezone=auto`;const r=await fetch(url);const data=await r.json();if(!r.ok)throw new Error(data?.reason||'Weather provider gagal');res.json(data);}catch(error){res.status(502).json({error:error.message});}});
+
+app.get('/api/public/auth/config', async (_req,res)=>{
+  try{
+    if(!supabaseUrl || !supabaseAnonKey) return res.status(503).json({error:'Layanan akun publik belum dikonfigurasi'});
+    res.json({url:supabaseUrl,anonKey:supabaseAnonKey});
+  }catch(error){res.status(500).json({error:error.message});}
+});
+
+app.get('/api/site/ad-market', async (_req,res)=>{
+  try{
+    const {data,error}=await adminClient.from('owner_ad_pricing_rules').select('pricing_key,placement,channel,region,base_rate,approved_rate,suggested_rate,currency,status,effective_from,effective_to,audience_multiplier,demand_multiplier,fill_multiplier,seasonal_multiplier,premium_multiplier').in('status',['active','approved','suggested']).order('effective_from',{ascending:false}).limit(20);
+    if(error) throw error;
+    res.json(data||[]);
+  }catch(error){res.status(500).json({error:error.message});}
+});
+
+
+const publicJatengRegions = [
+  ['Banjarnegara',-7.3958,109.6922,'Banjarnegara'],['Banyumas',-7.5161,109.2941,'Banyumas'],['Batang',-6.9083,109.7319,'Batang'],['Blora',-6.9698,111.4186,'Blora'],['Boyolali',-7.5333,110.6000,'Boyolali'],['Brebes',-6.8694,109.0369,'Brebes'],['Cilacap',-7.7278,109.0031,'Cilacap'],['Demak',-6.8922,110.6396,'Demak'],['Grobogan',-7.0872,110.9156,'Grobogan'],['Jepara',-6.5924,110.6671,'Jepara'],['Karanganyar',-7.5963,110.9480,'Karanganyar'],['Kebumen',-7.6682,109.6511,'Kebumen'],['Kendal',-6.9250,110.2059,'Kendal'],['Klaten',-7.7058,110.6065,'Klaten'],['Kudus',-6.8048,110.8405,'Kudus'],['Magelang',-7.4706,110.2175,'Magelang'],['Pati',-6.7516,111.0390,'Pati'],['Pekalongan',-6.8898,109.6746,'Pekalongan'],['Pemalang',-6.8958,109.3778,'Pemalang'],['Purbalingga',-7.3881,109.3637,'Purbalingga'],['Purworejo',-7.7167,110.0167,'Purworejo'],['Rembang',-6.7087,111.3472,'Rembang'],['Semarang',-7.1667,110.4000,'Kabupaten Semarang'],['Sragen',-7.4364,111.0225,'Sragen'],['Sukoharjo',-7.6833,110.8333,'Sukoharjo'],['Tegal',-7.1510,109.1402,'Kabupaten Tegal'],['Temanggung',-7.3167,110.1833,'Temanggung'],['Wonogiri',-7.8167,110.9167,'Wonogiri'],['Wonosobo',-7.3634,109.9000,'Wonosobo'],['Kota Magelang',-7.4706,110.2177,'Kota Magelang'],['Kota Pekalongan',-6.8898,109.6746,'Pekalongan'],['Kota Salatiga',-7.3305,110.5084,'Salatiga'],['Kota Semarang',-6.9667,110.4167,'Semarang'],['Kota Surakarta',-7.5755,110.8243,'Surakarta'],['Kota Tegal',-6.8694,109.1402,'Kota Tegal']
+];
+app.get('/api/public/regions', async (_req,res)=>{
+  try{
+    const names=publicJatengRegions.map(x=>x[3]);
+    const {data,error}=await adminClient.from('owner_content_regions').select('regency,city,content_type,content_id').or('province.eq.Jawa Tengah,region_level.eq.regency').limit(5000);
+    if(error) throw error;
+    const counts=new Map();
+    (data||[]).forEach(r=>{const k=String(r.regency||r.city||'').trim();if(!k)return;const m=counts.get(k)||{article_count:0,video_count:0};if(r.content_type==='article')m.article_count++;if(r.content_type==='video')m.video_count++;counts.set(k,m);});
+    res.json(publicJatengRegions.map(([name,lat,lon,query])=>{const c=counts.get(query)||counts.get(name)||{};return {name,query,latitude:lat,longitude:lon,article_count:c.article_count||0,video_count:c.video_count||0,source:'owner_content_regions + MUDA regional reference',updated_at:new Date().toISOString()};}));
+  }catch(error){res.status(500).json({error:error.message});}
+});
+app.get('/api/public/intelligence/overview', async (_req,res)=>{
+  try{
+    const since=new Date(Date.now()-86400000).toISOString();
+    const [a,v,e,ads]=await Promise.all([
+      adminClient.from('articles').select('id,status', {count:'exact'}).in('status',['published','public']),
+      adminClient.from('videos').select('id,status', {count:'exact'}).in('status',['published','public']),
+      adminClient.from('analytics_events').select('id,event_type,content_type,content_id,created_at').gte('created_at',since).limit(10000),
+      adminClient.from('owner_ad_pricing_rules').select('id',{count:'exact'}).eq('status','active')
+    ]);
+    for(const r of [a,v,e,ads]) if(r.error) throw r.error;
+    res.json({generated_at:new Date().toISOString(),articles_published:a.count||0,videos_published:v.count||0,events_24h:(e.data||[]).length,active_ad_rates:ads.count||0});
+  }catch(error){res.status(500).json({error:error.message});}
+});
+app.get('/api/public/intelligence/trending', async (req,res)=>{
+  try{
+    const limit=Math.min(Math.max(Number(req.query.limit||7),1),20);
+    const since=new Date(Date.now()-48*3600000).toISOString();
+    const [eventsR,articlesR]=await Promise.all([
+      adminClient.from('analytics_events').select('event_type,content_type,content_id,created_at').gte('created_at',since).limit(20000),
+      adminClient.from('articles').select('id,title,summary,category,tags,source,source_url,views,likes,shares,published_at,status').in('status',['published','public']).order('published_at',{ascending:false}).limit(500)
+    ]);
+    if(eventsR.error) throw eventsR.error; if(articlesR.error) throw articlesR.error;
+    const articles=articlesR.data||[], byId=new Map(articles.map(a=>[String(a.id),a]));
+    const signal=new Map();
+    for(const e of eventsR.data||[]){if(e.content_type!=='article'||!e.content_id)continue;const x=byId.get(String(e.content_id));if(!x)continue;const topic=String(x.title||'').split(/[:—–-]/)[0].trim()||String(x.category||'Berita');const key=topic.toLowerCase();const cur=signal.get(key)||{topic,category:x.category||'Berita',signal_count:0,score:0,updated_at:e.created_at,article_id:x.id,source:x.source||'Berita Muda',source_url:x.source_url||x.url||null};cur.signal_count++;cur.score+=e.event_type==='view'?1:e.event_type==='like'?3:e.event_type==='share'?4:1;if(new Date(e.created_at)>new Date(cur.updated_at))cur.updated_at=e.created_at;signal.set(key,cur);}
+    // Add article-level engagement without inventing a time window.
+    for(const x of articles){const topic=String(x.title||'').split(/[:—–-]/)[0].trim()||String(x.category||'Berita');const key=topic.toLowerCase();const cur=signal.get(key)||{topic,category:x.category||'Berita',signal_count:0,score:0,updated_at:x.published_at||new Date().toISOString(),article_id:x.id,source:x.source||'Berita Muda',source_url:x.source_url||x.url||null};cur.score+=Number(x.views||0)*0.01+Number(x.likes||0)*0.4+Number(x.shares||0)*0.8;signal.set(key,cur);}
+    const items=[...signal.values()].sort((a,b)=>b.score-a.score).slice(0,limit).map(x=>({...x,signal_count:Math.round(x.signal_count)}));
+    res.json({generated_at:new Date().toISOString(),window:'48 jam event + engagement konten yang tersedia',items});
+  }catch(error){res.status(500).json({error:error.message});}
+});
+app.get('/api/site/ad-market-intelligence', async (_req,res)=>{
+  try{
+    const {data,error}=await adminClient.from('owner_ad_pricing_rules').select('pricing_key,placement,channel,region,base_rate,audience_multiplier,demand_multiplier,fill_multiplier,seasonal_multiplier,premium_multiplier,suggested_rate,approved_rate,currency,auto_reprice,status,effective_from,effective_to,formula_version,updated_at').order('effective_from',{ascending:false}).limit(50);
+    if(error) throw error;
+    const now=Date.now();
+    res.json((data||[]).map(r=>{const from=r.effective_from?new Date(r.effective_from).getTime():null,to=r.effective_to?new Date(r.effective_to).getTime():null;const active=r.status==='active'&&(from===null||now>=from)&&(to===null||now<=to);const factors=[r.audience_multiplier,r.demand_multiplier,r.fill_multiplier,r.seasonal_multiplier,r.premium_multiplier].map(Number).every(Number.isFinite);const computed=factors?Number(r.base_rate||0)*Number(r.audience_multiplier||1)*Number(r.demand_multiplier||1)*Number(r.fill_multiplier||1)*Number(r.seasonal_multiplier||1)*Number(r.premium_multiplier||1):null;return {...r,active_now:active,computed_rate:computed,price_change_pct:r.approved_rate&&computed?((computed-r.approved_rate)/r.approved_rate)*100:null,source:'owner_ad_pricing_rules',calculated_at:new Date().toISOString()};}));
+  }catch(error){res.status(500).json({error:error.message});}
+});
 
 app.get('/api/site/navigation', async (_req,res)=>{try{const {data,error}=await adminClient.from('owner_site_navigation').select('nav_key,location,label,href,item_type,parent_key,sort_order,visible,start_at,end_at,metadata').eq('visible',true).order('sort_order');if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}});
 app.get('/api/site/pages/:slug', async (req,res)=>{try{const slug='/' + String(req.params.slug||'').replace(/^\/+/, '');const {data,error}=await adminClient.from('owner_site_pages').select('page_key,title,slug,content_html,content_json,seo_title,seo_description,version,published_at').eq('slug',slug).eq('status','published').maybeSingle();if(error)throw error;if(!data)return res.status(404).json({error:'Page tidak ditemukan'});res.json(data);}catch(error){res.status(500).json({error:error.message});}});
