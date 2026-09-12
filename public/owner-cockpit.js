@@ -6,7 +6,7 @@
   const nf=v=>new Intl.NumberFormat('id-ID').format(Number(v||0));
   const money=v=>'Rp '+nf(v);
   const token=()=>sessionStorage.getItem(K)||'';
-  async function api(path,opt={}){const headers={'Content-Type':'application/json',...(opt.headers||{})};const t=token();if(t)headers.Authorization='Bearer '+t;const r=await fetch(path,{...opt,headers});const txt=await r.text();let d={};try{d=txt?JSON.parse(txt):{}}catch{d={error:txt}}if(r.status===401){sessionStorage.removeItem(K);sessionStorage.removeItem('muda_owner_os_user');location.reload();throw new Error('Sesi login tidak valid. Silakan login kembali.')}if(!r.ok)throw new Error(d.error||`HTTP ${r.status}`);return d}
+  async function api(path,opt={}){const headers={'Content-Type':'application/json',...(opt.headers||{})};const t=token();if(t)headers.Authorization='Bearer '+t;const r=await fetch(path,{...opt,headers});const txt=await r.text();let d={};try{d=txt?JSON.parse(txt):{}}catch{d={error:txt}}if(r.status===401){sessionStorage.removeItem(K);sessionStorage.removeItem('muda_owner_os_user');throw new Error(d.error||'Sesi login tidak valid. Silakan login kembali.')}if(!r.ok)throw new Error(d.error||`HTTP ${r.status}`);return d}
   function toast(msg,bad=false){if(typeof window.toast==='function')return window.toast(msg,bad);const el=document.createElement('div');el.style.cssText='position:fixed;right:20px;bottom:20px;z-index:9999;padding:10px 14px;border:1px solid '+(bad?'#8f4650':'#275f4d')+';border-radius:10px;background:'+(bad?'#2a1117':'#0f241b')+';color:#eaf5ff';el.textContent=msg;document.body.appendChild(el);setTimeout(()=>el.remove(),3200)}
 
   const V={state:{cockpit:null,finance:null,wallet:null,timeline:null,activeFinance:'overview'}};
