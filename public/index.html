@@ -101,6 +101,22 @@
 
       <section class="classification-head"><div><span class="eyebrow">KLASIFIKASI KANAL</span><h2>Jelajahi berita berdasarkan kategori</h2><p>Setiap kanal memiliki filter yang sama agar navigasi dan klasifikasi tetap konsisten.</p></div></section>
 
+      <section class="intelligence-shell" id="intelligenceShell" aria-label="MUDA Intelligence">
+        <div class="intelligence-topbar">
+          <div><span class="eyebrow">MUDA INTELLIGENCE</span><h2>Berita yang menyesuaikan Anda.</h2><p class="intelligence-sub">Ikuti topik, simpan cerita, lihat perkembangan sebuah isu, dan minta briefing singkat kapan pun.</p></div>
+          <div class="intelligence-actions"><button class="smart-btn primary" id="briefMeBtn">✦ Brief Me</button><button class="smart-btn" id="listenBriefBtn">◉ Dengarkan</button><button class="smart-btn" id="focusModeBtn">◒ Focus</button></div>
+        </div>
+        <div class="smart-tabs" id="smartTabs"><button class="active" data-smart-tab="for-you">Untuk Anda</button><button data-smart-tab="following">Mengikuti</button><button data-smart-tab="latest">Terbaru</button><button data-smart-tab="local">Lokal</button><button data-smart-tab="full">Full Coverage</button></div>
+        <div class="intelligence-grid">
+          <section class="smart-panel primary-panel" id="smartFeedPanel"><div class="panel-head"><div><b id="smartPanelTitle">Untuk Anda</b><span id="smartPanelHint">Rekomendasi berdasarkan minat & perilaku lokal di perangkat ini.</span></div><button class="smart-link" id="refreshSmartFeed">Refresh</button></div><div id="smartFeed" class="smart-feed"></div></section>
+          <aside class="smart-side">
+            <section class="smart-panel"><div class="panel-head"><div><b>Daily Brief</b><span>60 detik untuk tahu yang penting.</span></div></div><div id="dailyBrief" class="brief-card"></div></section>
+            <section class="smart-panel"><div class="panel-head"><div><b>Topik & Sumber</b><span>Bangun feed Anda.</span></div></div><div id="followChips" class="follow-chips"></div></section>
+            <section class="smart-panel"><div class="panel-head"><div><b>StoryArc</b><span>Ikuti satu isu dari awal sampai terbaru.</span></div></div><div id="storyArc" class="story-arc"></div></section>
+          </aside>
+        </div>
+      </section>
+      <section class="intelligence-diagram"><div><span class="eyebrow">EVOLVING EXPERIENCE</span><h2>Discover → Understand → Engage → Learn</h2><p>Sistem menggunakan sinyal penggunaan untuk membuat pengalaman berita makin relevan, tetap dapat dijelaskan, dan tidak memaksa notifikasi.</p></div><img src="/intelligent-news-loop.svg" alt="MUDA Intelligent News Loop" loading="lazy" /></section>
       <section class="category-tiles" id="categoryTiles">
         <button data-category="NASIONAL"><span>◉</span><b>Nasional</b><small>Berita dalam negeri</small></button>
         <button data-category="INTERNASIONAL"><span>◎</span><b>Dunia</b><small>Isu internasional</small></button>
@@ -172,9 +188,15 @@
 
     <footer class="site-footer"><div class="container footer-grid"><div class="footer-brand"><img src="/assets/logo-berita-muda-round.png" alt="Berita Muda Indonesia" /><div><strong>BERITA MUDA<br/>INDONESIA</strong><span>Cepat · Akurat · Terpercaya</span></div></div><div><b>Redaksi</b><a href="/about.html">Profil</a><a href="/editorial.html">Pedoman Redaksi</a><a href="/contact.html">Kontak</a></div><div><b>Layanan</b><a href="#videoPanel">Video</a><a href="#advertiseBtn">Iklan</a><a href="/admin.html">Admin</a></div><div><b>Informasi</b><a href="/privacy.html">Privasi</a><a href="/terms.html">Ketentuan</a><a href="/disclaimer.html">Disclaimer</a></div><form id="newsletterForm" class="newsletter"><b>Ikuti Pembaruan</b><p>Ringkasan berita dan perkembangan produk.</p><div><input type="email" placeholder="Email Anda" required /><button type="submit">→</button></div></form></div><div class="container footer-bottom"><span>© <span id="year"></span> Berita Muda Indonesia</span><span>Powered by Intelligent Media Architecture</span></div></footer>
 
+    <div class="modal hidden" id="briefModal" role="dialog" aria-modal="true"><div class="modal-backdrop" data-close-brief></div><section class="modal-card smart-modal"><button class="modal-close" data-close-brief>×</button><div class="eyebrow">BRIEF ME</div><h2>Brief saya tentang…</h2><form id="briefForm"><input id="briefTopic" placeholder="topik, tokoh, kota, atau isu" autocomplete="off"><div class="brief-options"><button type="button" data-len="60">60 detik</button><button type="button" data-len="180">3 menit</button><button type="button" data-len="420">7 menit</button></div><button class="smart-btn primary" type="submit">Buat briefing</button></form><div id="briefResult" class="brief-result"></div></section></div>
+
+    <div class="modal hidden" id="storyAskModal" role="dialog" aria-modal="true"><div class="modal-backdrop" data-close-ask></div><section class="modal-card smart-modal"><button class="modal-close" data-close-ask>×</button><div class="eyebrow">ASK THIS STORY</div><h2 id="storyAskTitle">Tanya tentang cerita</h2><form id="storyAskForm"><input id="storyAskInput" placeholder="Mengapa ini penting? Apa latarnya?" autocomplete="off"><button class="smart-btn primary" type="submit">Jawab</button></form><div id="storyAskResult" class="brief-result"></div></section></div>
+
     <div class="modal hidden" id="articleModal" role="dialog" aria-modal="true"><div class="modal-backdrop" data-close-modal></div><article class="modal-card"><button class="modal-close" data-close-modal>×</button><div id="modalBody"></div></article></div>
     <div class="toast-zone" id="toastZone"></div>
   </div>
   <script src="/app.js" defer></script>
+<script src="/site-runtime.js" defer></script>
+  <script src="/intelligent-experience.js" defer></script>
 </body>
 </html>
