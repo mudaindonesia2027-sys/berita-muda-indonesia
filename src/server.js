@@ -7320,25 +7320,6 @@ app.post('/api/admin/owner/briefing/generate', admin, ownerWrite, async (request
 });
 
 /* =========================================================
-   404 HANDLER
-========================================================= */
-
-app.use(
-  (
-    request,
-    response
-  ) => {
-    response
-      .status(404)
-      .json({
-        error:
-          'Endpoint tidak ditemukan'
-      });
-  }
-);
-
-
-/* =========================================================
    MUDA V19 — ULTIMATE OWNER CONTROL PLANE
    Canonical money, finance administration, media intelligence,
    reconciliation, scenario/decision support and richer cockpit.
@@ -7427,6 +7408,77 @@ const v19MediaIntelligence = async () => {
   return {articles:rankedArticles.slice(0,40),videos:videos.slice(0,40),events,breaking,analyticsByType,articleStats,videoStats,adStats,topStory:rankedArticles[0]||null};
 };
 
+
+const ownerDecisionSignalSeverity = value => ['info','low','medium','high','critical'].includes(value) ? value : 'info';
+
+const buildOwnerDecisionSignals = (cockpit, intelligence = null) => {
+  const now = new Date().toISOString();
+  const out = [];
+  const push = (signal_key, area, severity, score, confidence, title, explanation, recommended_action, resource_type = null, resource_id = null) => {
+    out.push({signal_key, area, severity:ownerDecisionSignalSeverity(severity), score:Number(score||0), confidence:Number(confidence||0), title, explanation, recommended_action, resource_type, resource_id:resource_id || null, observed_at:now});
+  };
+  const f = cockpit?.finance || {};
+  const m = cockpit?.media || {};
+  const d = intelligence?.decision || null;
+  const providers = cockpit?.providers || [];
+  const degradedProviders = providers.filter(x => !['active'].includes(String(x.status||'').toLowerCase()));
+  const red = cockpit?.redFlags || [];
+
+  if (Number(f.totals?.receivableOverdue||0) > 0) push('finance.receivable_overdue','Finance','high',92,96,'Piutang jatuh tempo',`Piutang overdue Rp ${Number(f.totals.receivableOverdue).toLocaleString('id-ID')}.`,'review_overdue_receivable','finance',null);
+  if (Number(f.totals?.payableOverdue||0) > 0) push('finance.payable_overdue','Finance','high',90,96,'Hutang jatuh tempo',`Hutang overdue Rp ${Number(f.totals.payableOverdue).toLocaleString('id-ID')}.`,'review_overdue_payable','finance',null);
+  const budgetHot = (f.budgets||[]).find(x => Number(x.amount||0)>0 && Number(x.spent||0)/Number(x.amount||1) >= .9);
+  if (budgetHot) push(`finance.budget.${budgetHot.id}`,'Finance','medium',78,92,`Budget hampir habis: ${budgetHot.name}`,`Utilisasi ${Math.round(Number(budgetHot.spent||0)/Number(budgetHot.amount||1)*100)}%.`,'review_ad_budget','owner_budget',budgetHot.id);
+  if ((m.breaking||[]).length) push('newsroom.breaking_active','Newsroom','high',94,95,`${m.breaking.length} breaking aktif`,'Breaking aktif perlu triage editorial sebelum backlog bertambah.','review_breaking','breaking_news',m.breaking[0]?.id||null);
+  if (degradedProviders.length) push('governance.provider_degraded','Governance','medium',72,94,`${degradedProviders.length} provider belum active`,'Provider yang belum active mempengaruhi kemampuan tertentu dan harus ditampilkan jujur.','provider_health_check','integration_provider',null);
+  if (d?.degraded_sources?.length) push('operations.source_degraded','Operations','high',86,93,`${d.degraded_sources.length} source berita terdegradasi`,'Source health menurun sehingga freshness dan coverage berita berisiko.','investigate_sources','news_source',d.degraded_sources[0]?.id||null);
+  if ((cockpit?.core?.alerts||[]).length) push('operations.open_alerts','Operations','high',84,96,`${cockpit.core.alerts.length} alert terbuka`,'Alert aktif membutuhkan triage, acknowledgment, atau recovery.','open_alerts','owner_alert',cockpit.core.alerts[0]?.id||null);
+  if ((cockpit?.core?.tasks||[]).length) push('governance.owner_tasks','Governance','medium',68,90,`${cockpit.core.tasks.length} task Owner terbuka`,'Backlog operasional masih memiliki pekerjaan aktif.','open_tasks','owner_task',cockpit.core.tasks[0]?.id||null);
+  if (m.topStory) push('intelligence.top_story_opportunity','Intelligence','medium',Math.min(95,Math.max(55,Number(m.topStory.owner_score||0))),88,`Peluang story: ${m.topStory.title}`,'Story dengan owner score tertinggi layak ditinjau untuk publication, feature, distribution, dan monetization.','review_story','articles',m.topStory.id);
+  if (!out.length) push('system.stable','Mission','info',55,72,'Sistem stabil','Tidak ada red flag prioritas dari telemetry yang tersedia.','generate_brief');
+  return out.sort((a,b)=>Number(b.score||0)-Number(a.score||0)).slice(0,20);
+};
+
+const syncOwnerDecisionSignals = async (cockpit, intelligence = null) => {
+  const signals = buildOwnerDecisionSignals(cockpit, intelligence);
+  try {
+    const existingQ = await adminClient.from('owner_decision_signals').select('*').eq('status','open').limit(200);
+    const existing = existingQ.data || [];
+    const byKey = new Map(existing.map(x => [x.signal_key, x]));
+    const seen = new Set();
+    for (const signal of signals) {
+      seen.add(signal.signal_key);
+      const prior = byKey.get(signal.signal_key);
+      const payload = {...signal};
+      delete payload.observed_at;
+      if (prior) await adminClient.from('owner_decision_signals').update(payload).eq('id',prior.id);
+      else await adminClient.from('owner_decision_signals').insert(payload);
+    }
+    for (const prior of existing) if (!seen.has(prior.signal_key)) await adminClient.from('owner_decision_signals').update({status:'resolved',resolved_at:new Date().toISOString()}).eq('id',prior.id);
+  } catch (error) {
+    console.warn('[OWNER SIGNALS]', error?.message || error);
+  }
+  return signals;
+};
+
+const ownerRuntimeCapabilities = async (cockpit, intelligence = null) => {
+  const features = OWNER_FEATURES_V14.map(x => ({...x}));
+  const providers = cockpit.providers || [];
+  const providerMap = new Map(providers.map(x => [x.provider_key, x]));
+  const hasSignalLayer = true;
+  return features.map(f => {
+    const inferred = f.key.startsWith('ads.') || f.key.startsWith('money.ad_yield') ? ['adsense'] : f.key.startsWith('automation.') ? ['scheduler'] : f.key.startsWith('distribution.social') ? ['social_distribution'] : f.key.includes('recommendation') || f.key.includes('copilot') ? ['ai_provider'] : [];
+    const providerKeys = String(f.provider_dependency || '').split(',').map(x=>x.trim()).filter(Boolean).concat(inferred).filter((v,i,a)=>a.indexOf(v)===i);
+    const blocked = providerKeys.some(k => providerMap.get(k) && providerMap.get(k).status !== 'active');
+    let runtime_status = 'ready';
+    let runtime_reason = 'Core V19 path available';
+    if (blocked) { runtime_status='conditional'; runtime_reason='Menunggu provider aktif: '+providerKeys.filter(k=>providerMap.get(k)?.status !== 'active').join(', '); }
+    else if (f.status === 'foundation') { runtime_status='ready_with_guard'; runtime_reason='Foundation aktif; akses tunduk pada evidence, risk gate, dan data availability.'; }
+    else if (f.status === 'enhanced') { runtime_status='ready'; runtime_reason='Enhanced runtime path tersedia.'; }
+    else if (f.status === 'active') { runtime_status='ready'; runtime_reason='Active runtime path tersedia.'; }
+    return {...f,runtime_status,runtime_reason,signal_layer:hasSignalLayer};
+  });
+};
+
 const v19OwnerUltimateCockpit = async () => {
   const [core,finance,media,providers,commands,tasks,alerts,goals,autonomy,timeline] = await Promise.all([
     adminClient.from('owner_alerts').select('id,severity,title,source,created_at,status').eq('status','open').order('created_at',{ascending:false}).limit(20),
@@ -7449,6 +7501,10 @@ const v19OwnerUltimateCockpit = async () => {
   if(finance.totals.payableOverdue>0) redFlags.push({severity:'high',title:'Hutang jatuh tempo',amount:finance.totals.payableOverdue,action:'review_overdue_payable'});
   if(media.adStats.budget>0 && media.adStats.spend/media.adStats.budget>0.9) redFlags.push({severity:'medium',title:'Budget iklan hampir habis',amount:media.adStats.spend,action:'review_ad_budget'});
   if(media.breaking.length>0) redFlags.push({severity:'medium',title:`${media.breaking.length} breaking aktif`,action:'review_breaking'});
+  let signalSource = {decision:{degraded_sources:[]}};
+  try { const brief = await ownerDecisionBrief(); signalSource = {decision:brief}; } catch (_) {}
+  const decisionSignals = await syncOwnerDecisionSignals({finance,media,providers,core:{alerts:alerts||core.data||[],tasks}}, signalSource);
+  const capabilities = await ownerRuntimeCapabilities({providers}, signalSource);
   return {
     generated_at:new Date().toISOString(),
     headline:redFlags.length?`Owner memiliki ${redFlags.length} hal yang perlu diputuskan.`:'Kontrol Owner stabil; fokus berikutnya pada pertumbuhan, kualitas, dan monetisasi.',
@@ -7456,6 +7512,8 @@ const v19OwnerUltimateCockpit = async () => {
     media,
     finance:{...finance,month:{inflow:monthIn,outflow:monthOut,net:monthIn-monthOut}},
     providers,commands,redFlags,
+    signals:decisionSignals,
+    capabilities:{total:capabilities.length,ready:capabilities.filter(x=>x.runtime_status==='ready').length,conditional:capabilities.filter(x=>x.runtime_status==='conditional').length,guarded:capabilities.filter(x=>x.runtime_status==='ready_with_guard').length,features:capabilities},
     decision:{topStory:media.topStory,confidence:Math.max(55,Math.min(97,100-redFlags.length*7)),recommended: redFlags.length?redFlags:[{severity:'low',title:'Naikkan monetisasi story terbaik',action:'analyze_top_story_revenue'}]}
   };
 };
@@ -7463,6 +7521,28 @@ const v19OwnerUltimateCockpit = async () => {
 app.get('/api/admin/owner/ultimate/cockpit', admin, async (_request,response)=>{
   try { response.json(await v19OwnerUltimateCockpit()); }
   catch(error){ response.status(500).json({error:error.message}); }
+});
+
+
+app.get('/api/admin/owner/decision-signals', admin, async (_request,response)=>{
+  try {
+    const cockpit = await v19OwnerUltimateCockpit();
+    const {data,error}=await adminClient.from('owner_decision_signals').select('*').order('status').order('severity').order('created_at',{ascending:false}).limit(100);
+    if(error) throw error;
+    response.json({ok:true,generated_at:new Date().toISOString(),signals:data||cockpit.signals||[],live_signals:cockpit.signals||[]});
+  } catch(error){ response.status(500).json({error:error.message}); }
+});
+
+app.patch('/api/admin/owner/decision-signals/:id', admin, ownerWrite, async (request,response)=>{
+  try {
+    const status=['open','acknowledged','resolved','dismissed'].includes(request.body?.status)?request.body.status:null;
+    if(!status) return response.status(400).json({error:'status tidak valid'});
+    const patch={status,resolved_at:['resolved','dismissed'].includes(status)?new Date().toISOString():null};
+    const {data,error}=await adminClient.from('owner_decision_signals').update(patch).eq('id',request.params.id).select().single();
+    if(error) throw error;
+    await auditOwnerAction(request,'owner_decision_signal_'+status,'owner_decision_signal',request.params.id,{status});
+    response.json({ok:true,signal:data});
+  } catch(error){ response.status(400).json({error:error.message}); }
 });
 
 app.post('/api/admin/owner/finance/reconcile-legacy', admin, ownerWrite, async (request,response)=>{
@@ -7573,6 +7653,25 @@ app.get('/api/admin/owner/finance/report.csv', admin, async (request,response)=>
 app.get('/api/admin/owner/media/cockpit', admin, async (_request,response)=>{try{response.json(await v19MediaIntelligence());}catch(error){response.status(500).json({error:error.message});}});
 
 app.post('/api/admin/owner/media/snapshot', admin, ownerWrite, async (request,response)=>{try{const m=await v19MediaIntelligence();const row={articles_total:m.articleStats.total,articles_published:m.articleStats.published,videos_total:m.videoStats.total,videos_published:m.videoStats.published,live_events:m.events.length,breaking_active:m.breaking.length,top_story_id:m.topStory?.id||null,article_views:m.articleStats.views||0,video_views:m.videos.reduce((a,x)=>a+Number(x.views||0),0),engagement_rate:m.articleStats.views?(((m.articleStats.likes+m.articleStats.shares)/m.articleStats.views)*100):0,notes:'Owner media snapshot',created_by:request.user.id};const {data,error}=await adminClient.from('owner_media_snapshots').insert(row).select().single();if(error)throw error;await auditOwnerAction(request,'owner_media_snapshot','owner_media_snapshot',data.id,row);response.status(201).json(data);}catch(error){response.status(400).json({error:error.message});}});
+
+/* =========================================================
+   404 HANDLER
+========================================================= */
+
+app.use(
+  (
+    request,
+    response
+  ) => {
+    response
+      .status(404)
+      .json({
+        error:
+          'Endpoint tidak ditemukan'
+      });
+  }
+);
+
 
 /* =========================================================
    GLOBAL ERROR HANDLER
