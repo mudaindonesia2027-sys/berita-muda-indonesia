@@ -91,6 +91,50 @@ button.secondary:hover,button.primary:hover{transform:translateY(-1px)}
 table{min-width:760px}
 .modal{border-color:#29445f;box-shadow:0 28px 90px rgba(0,0,0,.55)}
 @media (max-width:900px){.hero{grid-template-columns:1fr}.nav{top:60px}.search{grid-template-columns:1fr}.identity .email{max-width:180px}}
+
+/* V19 LUXURY OPERATING SYSTEM LAYER */
+:root{
+  --lux-bg:#04070d; --lux-panel:#09111d; --lux-panel2:#0c1725; --lux-line:#1c3048;
+  --lux-text:#f5f8fc; --lux-muted:#7f93aa; --lux-cyan:#54e4ff; --lux-blue:#3c9cff;
+  --lux-violet:#9a86ff; --lux-green:#43e19a; --lux-amber:#ffc95f; --lux-red:#ff6e7d;
+}
+body{background:
+  radial-gradient(900px 500px at 80% -10%,rgba(70,145,255,.18),transparent 55%),
+  radial-gradient(700px 450px at 5% 15%,rgba(83,226,255,.10),transparent 58%),#04070d}
+.lux-hero{display:grid;grid-template-columns:1.45fr .85fr;gap:16px;margin-bottom:16px}
+.lux-card{border:1px solid #1b3049;background:linear-gradient(180deg,rgba(12,24,39,.96),rgba(5,12,21,.96));border-radius:22px;box-shadow:0 22px 70px rgba(0,0,0,.30);overflow:hidden}
+.lux-card.pad{padding:18px}
+.lux-kicker{font-size:10px;letter-spacing:.18em;text-transform:uppercase;font-weight:900;color:var(--lux-cyan)}
+.lux-title{font-size:clamp(26px,3.1vw,48px);line-height:1.02;letter-spacing:-.04em;margin:8px 0 10px}
+.lux-sub{color:#9db0c4;line-height:1.55;max-width:880px}
+.pulse-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:16px}
+.pulse-tile{padding:12px;border:1px solid #1a2c41;border-radius:14px;background:rgba(7,16,27,.7)}
+.pulse-tile b{display:block;font-size:23px;margin-top:4px}.pulse-tile span{color:#7890a9;font-size:10px;text-transform:uppercase;letter-spacing:.07em}
+.ecosystem{position:relative;min-height:290px;padding:18px}
+.eco-svg{width:100%;height:245px;display:block}
+.eco-node{fill:#0c1b2b;stroke:#294665;stroke-width:1.4}.eco-core{fill:#0d2337;stroke:#49d9ff;stroke-width:2}
+.eco-text{fill:#dcecff;font-size:12px;font-weight:800}.eco-sub{fill:#7e9ab5;font-size:9px}
+.eco-flow{stroke:#4fd6ff;stroke-width:2;stroke-linecap:round;stroke-dasharray:5 8;animation:flow 4s linear infinite}.eco-flow.v{stroke:#9b8cff}.eco-flow.g{stroke:#42e09b}
+@keyframes flow{to{stroke-dashoffset:-80}}
+.eco-dot{fill:#fff;filter:drop-shadow(0 0 6px rgba(79,214,255,.9));animation:dot 3.2s linear infinite}.eco-dot.d2{animation-delay:-1.2s}.eco-dot.d3{animation-delay:-2.2s}
+@keyframes dot{0%{transform:translateX(0);opacity:.15}12%{opacity:1}50%{opacity:1}100%{transform:translateX(280px);opacity:.15}}
+.activity-strip{display:flex;gap:8px;overflow:auto;padding:10px 14px;border-top:1px solid #172a3f;background:#060d17}
+.activity-chip{white-space:nowrap;border:1px solid #1d334b;border-radius:999px;padding:7px 10px;font-size:10px;color:#b9cae0;background:#091421}
+.activity-chip i{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--lux-green);margin-right:5px;box-shadow:0 0 9px rgba(67,225,154,.9)}
+.module-group{margin-top:16px}
+.module-label{font-size:10px;color:#7288a1;text-transform:uppercase;letter-spacing:.16em;font-weight:900;margin:0 0 7px 4px}
+.subnav{display:flex;gap:6px;overflow:auto;padding:6px;background:rgba(5,12,20,.65);border:1px solid #16283d;border-radius:14px;margin-bottom:10px}
+.subnav button{border:1px solid transparent;background:transparent;color:#8fa3bb;padding:8px 10px;border-radius:9px;font-size:11px;font-weight:800;white-space:nowrap}.subnav button.active{color:#fff;background:#102a45;border-color:#265b8b}
+.finance-head{display:grid;grid-template-columns:1.15fr .85fr;gap:14px}.finance-badge{padding:10px 12px;border:1px solid #21405d;background:linear-gradient(135deg,rgba(40,111,171,.18),rgba(21,170,117,.08));border-radius:14px}
+.finance-badge b{font-size:21px}.finance-badge small{display:block;color:#7e95ac;margin-top:4px}
+.finance-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:9px}.finance-grid .metric{min-height:84px}
+.kpi-bar{height:7px;border-radius:999px;background:#07111d;overflow:hidden;border:1px solid #1b2b3f}.kpi-bar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#2f8dff,#52dfff)}
+.spark{height:90px;width:100%;border:1px solid #192c42;border-radius:12px;background:linear-gradient(180deg,#07121f,#08101b)}
+.eco-legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}.legend{font-size:10px;color:#8298ae}.legend b{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:4px;background:var(--lux-cyan)}
+.legend.v b{background:var(--lux-violet)}.legend.g b{background:var(--lux-green)}.legend.a b{background:var(--lux-amber)}
+@media(max-width:1100px){.lux-hero,.finance-head{grid-template-columns:1fr}.finance-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:700px){.pulse-grid{grid-template-columns:repeat(2,1fr)}.finance-grid{grid-template-columns:repeat(2,1fr)}.lux-title{font-size:30px}}
+
 </style>
 </head>
 <body>
@@ -107,6 +151,47 @@ table{min-width:760px}
 <div id="app" class="hidden">
   <div class="topbar"><div class="shell topbar-in"><div class="brand">MUDA <span>MEDIA OS · OWNER CONTROL</span></div><div class="identity"><span id="healthPill" class="pill warn">CHECKING</span><span class="email" id="identity"></span><button class="secondary" onclick="refreshAll()">↻ Refresh</button><button class="secondary" onclick="logout()">Keluar</button></div></div></div>
   <main class="shell main">
+    <section class="lux-hero">
+      <div class="lux-card pad">
+        <div class="lux-kicker">MUDA V19 · EXECUTIVE MEDIA ECOSYSTEM</div>
+        <div class="lux-title">Satu layar untuk melihat, mengerti, memutuskan, dan menggerakkan seluruh ekosistem.</div>
+        <div class="lux-sub">Web, video, audience, intelligence, monetization, finance, automation, dan governance dibaca sebagai satu sistem. Modul aktif mengikuti capability, dependency, data availability, dan risk gate secara realtime.</div>
+        <div class="pulse-grid">
+          <div class="pulse-tile"><span>Web Attention</span><b id="lux_web">—</b></div>
+          <div class="pulse-tile"><span>Video Reach</span><b id="lux_video">—</b></div>
+          <div class="pulse-tile"><span>Money Pulse</span><b id="lux_money">—</b></div>
+          <div class="pulse-tile"><span>System Mode</span><b id="lux_mode">—</b></div>
+        </div>
+      </div>
+      <div class="lux-card ecosystem">
+        <div class="lux-kicker">LIVE ECOSYSTEM MAP</div>
+        <svg class="eco-svg" viewBox="0 0 520 245" aria-label="Peta ekosistem MUDA">
+          <defs>
+            <filter id="glow"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+          </defs>
+          <path d="M125 72 C175 72 185 95 230 112" class="eco-flow"/>
+          <path d="M125 172 C175 172 185 145 230 132" class="eco-flow v"/>
+          <path d="M395 72 C350 72 338 97 292 113" class="eco-flow g"/>
+          <path d="M395 172 C350 172 338 147 292 133" class="eco-flow"/>
+          <path d="M245 115 C215 65 165 42 125 42" class="eco-flow" opacity=".4"/>
+          <circle cx="250" cy="123" r="42" class="eco-core"/>
+          <circle cx="80" cy="72" r="38" class="eco-node"/>
+          <circle cx="80" cy="172" r="38" class="eco-node"/>
+          <circle cx="440" cy="72" r="38" class="eco-node"/>
+          <circle cx="440" cy="172" r="38" class="eco-node"/>
+          <text x="250" y="120" text-anchor="middle" class="eco-text">MUDA OS</text>
+          <text x="250" y="136" text-anchor="middle" class="eco-sub">Decision · Action · Learning</text>
+          <text x="80" y="70" text-anchor="middle" class="eco-text">WEB</text><text x="80" y="84" text-anchor="middle" class="eco-sub">attention</text>
+          <text x="80" y="170" text-anchor="middle" class="eco-text">VIDEO</text><text x="80" y="184" text-anchor="middle" class="eco-sub">reach</text>
+          <text x="440" y="70" text-anchor="middle" class="eco-text">AUDIENCE</text><text x="440" y="84" text-anchor="middle" class="eco-sub">demand</text>
+          <text x="440" y="170" text-anchor="middle" class="eco-text">MONEY</text><text x="440" y="184" text-anchor="middle" class="eco-sub">cashflow</text>
+          <circle cx="130" cy="72" r="4" class="eco-dot" filter="url(#glow)"/><circle cx="130" cy="172" r="4" class="eco-dot d2"/><circle cx="390" cy="72" r="4" class="eco-dot d3" filter="url(#glow)"/>
+        </svg>
+        <div class="eco-legend"><span class="legend"><b></b>Web</span><span class="legend v"><b></b>Video</span><span class="legend g"><b></b>Audience</span><span class="legend a"><b></b>Money</span></div>
+      </div>
+    </section>
+    <div class="activity-strip" id="lux_activity"><span class="activity-chip"><i></i>Memuat aktivitas ekosistem…</span></div>
+
     <section class="hero">
       <div class="hero-card">
         <div class="tag">MUDA OWNER OS · EXECUTIVE CONTROL</div>
@@ -169,6 +254,20 @@ table{min-width:760px}
     </section>
 
     <section id="view-money" class="section view hidden">
+      <div class="module-label">FINANCE ADMINISTRATION CENTER</div>
+      <div class="subnav" id="financeSubnav">
+        <button class="active" data-fin="overview">Overview</button><button data-fin="cash">Cashflow & Runway</button><button data-fin="ar">Receivable</button><button data-fin="ap">Payable</button><button data-fin="ledger">Canonical Ledger</button><button data-fin="budget">Budget & Variance</button><button data-fin="recurring">Recurring</button><button data-fin="close">Month Close</button><button data-fin="wallet">Wallet & Payout</button>
+      </div>
+      <div class="finance-head">
+        <div class="panel pad"><div class="section-head"><div><h2>Financial Control Tower</h2><p>Administrasi uang disusun dari posisi kas → transaksi → AR/AP → budget → reconciliation → close.</p></div><span class="tag">V19 · CONTROLLED</span></div><div class="finance-grid"><div class="metric"><span>Cash Position</span><b id="fin_cash">Rp 0</b></div><div class="metric"><span>Month In</span><b id="fin_in">Rp 0</b></div><div class="metric"><span>Month Out</span><b id="fin_out">Rp 0</b></div><div class="metric"><span>Net Cash</span><b id="fin_net">Rp 0</b></div><div class="metric"><span>AR Open</span><b id="fin_ar">Rp 0</b></div><div class="metric"><span>AP Open</span><b id="fin_ap">Rp 0</b></div></div></div>
+        <div class="panel"><div class="section-head"><div><h2>Financial Health</h2><p>Indikator pengelolaan dan kesiapan close.</p></div></div><div id="fin_health"></div><div class="status" style="margin-top:10px" id="fin_close_state">Close state: checking…</div></div>
+      </div>
+      <div class="panel" id="fin_detail" style="margin-top:12px"><div class="section-head"><div><h2 id="fin_detail_title">Finance Overview</h2><p id="fin_detail_desc">Pilih domain administrasi uang untuk melihat detailnya.</p></div><span class="tag" id="fin_detail_tag">OVERVIEW</span></div><div id="fin_detail_body" class="list"></div></div>
+      <div class="grid-2" style="margin-top:12px">
+        <div class="panel"><div class="section-head"><div><h2>Cashflow Pulse</h2><p>Inflow vs outflow · realtime snapshot.</p></div></div><canvas id="fin_chart" class="spark" height="90"></canvas></div>
+        <div class="panel"><div class="section-head"><div><h2>Control Checklist</h2><p>AR/AP, reconciliation, budget, variance, close.</p></div></div><div id="fin_checks" class="list"></div></div>
+      </div>
+
       <div class="grid-3"><div class="metric"><span>Revenue 30 hari</span><b id="rev30">—</b></div><div class="metric"><span>Affiliate Commission</span><b id="revAff">—</b></div><div class="metric"><span>Entries</span><b id="revEntries">—</b></div></div>
       <div class="grid-2" style="margin-top:12px"><div class="panel"><div class="section-head"><div><h2>Revenue Intelligence</h2><p>Adsense, direct ad, sponsor, affiliate, video, subscription.</p></div></div><div id="revenue" class="table-wrap"></div></div><div class="panel"><div class="section-head"><div><h2>Providers</h2><p>Provider-dependent features are shown honestly.</p></div></div><div id="providersMoney" class="list"></div></div></div>
       <div class="grid-2" style="margin-top:12px"><div class="panel"><div class="section-head"><div><h2>Wallet & Reconciliation</h2><p>Saldo available/pending, transaksi, payout dan variance.</p></div><button class="secondary" onclick="loadWallet()">Refresh Wallet</button></div><div id="walletSummary" class="grid-3"></div><div id="walletTx" class="table-wrap" style="margin-top:10px"></div></div><div class="panel"><div class="section-head"><div><h2>Payout Operations</h2><p>Status request → approval → paid/rejected/cancelled.</p></div></div><div id="payouts" class="list"></div></div></div>
@@ -182,6 +281,12 @@ table{min-width:760px}
 
 
     <section id="view-v19" class="section view hidden">
+      <div class="module-label">SYSTEM VISUALIZATION & LIVE ACTIVITY</div>
+      <div class="grid-2">
+        <div class="panel"><div class="section-head"><div><h2>User & Content Activity Stream</h2><p>Web → article → video → audience → money. Bergerak mengikuti event terbaru yang tersedia.</p></div></div><div id="ecosystem_activity" class="list"></div></div>
+        <div class="panel"><div class="section-head"><div><h2>Attention Funnel</h2><p>Indikator distribusi aktivitas pengguna dan content flow.</p></div></div><div id="ecosystem_funnel"></div></div>
+      </div>
+
       <div class="grid-4">
         <div class="metric"><span>Operating Mode</span><b id="v19_mode">—</b><small id="v19_mode_reason">checking…</small></div>
         <div class="metric"><span>Open Signals</span><b id="v19_signal_count">—</b><small>Decision Signal Engine</small></div>
