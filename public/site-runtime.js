@@ -39,7 +39,7 @@
       const campaigns = await get('/api/site/campaigns/active');
       if(!widgets.length && !campaigns.length) return;
       let dock = document.getElementById('mudaExperienceDock');
-      if(!dock){ dock=document.createElement('aside'); dock.id='mudaExperienceDock'; dock.innerHTML='<div class="muda-exp-head"><strong>MUDA LIVE</strong><span>Pengalaman interaktif</span></div><div id="mudaExpBody"></div>'; document.body.appendChild(dock); }
+      if(!dock){ dock=document.createElement('section'); dock.id='mudaExperienceDock'; dock.innerHTML='<div class="muda-exp-head"><strong>MUDA LIVE</strong><span>Pengalaman interaktif</span></div><div id="mudaExpBody"></div>'; const main=document.querySelector('main.container')||document.querySelector('main'); if(main) main.appendChild(dock); else document.body.appendChild(dock); }
       const body=dock.querySelector('#mudaExpBody');
       const cards=[];
       for(const w of widgets){
