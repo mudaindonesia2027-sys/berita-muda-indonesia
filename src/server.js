@@ -5942,1053 +5942,6 @@ app.get(
 );
 
 
-
-/* =========================================================
-   MUDA INDONESIA V19
-   OWNER MONEY + RECONCILIATION + MEDIA INTELLIGENCE API
-   Added to integrate migrations 021 and 022 with production.
-========================================================= */
-
-const validUuid = value =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-    .test(
-      String(value || '')
-    );
-
-const parseOptionalBoolean = value => {
-  if (
-    value === true ||
-    value === 'true' ||
-    value === 1 ||
-    value === '1'
-  ) {
-    return true;
-  }
-
-  if (
-    value === false ||
-    value === 'false' ||
-    value === 0 ||
-    value === '0'
-  ) {
-    return false;
-  }
-
-  return null;
-};
-
-const getV19Overview = async () => {
-  const [
-    moneyResult,
-    reconciliationResult,
-    closeChecksResult,
-    mediaResult,
-    signalsResult
-  ] = await Promise.all([
-    adminClient
-      .from('owner_money_ledger')
-      .select(
-        'id, canonical_key, reconciled, reconciliation_status',
-        { count: 'exact' }
-      ),
-
-    adminClient
-      .from('owner_money_reconciliations')
-      .select(
-        'id, period_start, period_end, status, variance_in, variance_out, created_at',
-        { count: 'exact' }
-      )
-      .order(
-        'created_at',
-        { ascending: false }
-      )
-      .limit(50),
-
-    adminClient
-      .from('owner_finance_close_checks')
-      .select(
-        'id, period_month, check_key, label, required, passed',
-        { count: 'exact' }
-      )
-      .order(
-        'period_month',
-        { ascending: false }
-      )
-      .limit(100),
-
-    adminClient
-      .from('owner_media_snapshots')
-      .select('*')
-      .order(
-        'snapshot_at',
-        { ascending: false }
-      )
-      .limit(1)
-      .maybeSingle(),
-
-    adminClient
-      .from('owner_decision_signals')
-      .select(
-        'id, signal_key, area, severity, score, confidence, title, status, created_at',
-        { count: 'exact' }
-      )
-      .eq(
-        'status',
-        'open'
-      )
-      .order(
-        'created_at',
-        { ascending: false }
-      )
-      .limit(50)
-  ]);
-
-  const firstError =
-    moneyResult.error ||
-    reconciliationResult.error ||
-    closeChecksResult.error ||
-    mediaResult.error ||
-    signalsResult.error;
-
-  if (firstError) {
-    throw firstError;
-  }
-
-  const money =
-    moneyResult.data ||
-    [];
-
-  const reconciliations =
-    reconciliationResult.data ||
-    [];
-
-  const closeChecks =
-    closeChecksResult.data ||
-    [];
-
-  const signals =
-    signalsResult.data ||
-    [];
-
-  const requiredChecks =
-    closeChecks.filter(
-      item => item.required === true
-    );
-
-  const failedChecks =
-    requiredChecks.filter(
-      item => item.passed !== true
-    );
-
-  const openSignals =
-    signals.filter(
-      item => item.status === 'open'
-    );
-
-  return {
-    ok: true,
-    version: 'V19',
-    generated_at:
-      new Date().toISOString(),
-
-    money: {
-      total_records:
-        moneyResult.count ??
-        money.length,
-
-      canonical_records:
-        money.filter(
-          item => Boolean(item.canonical_key)
-        ).length,
-
-      unreconciled_records:
-        money.filter(
-          item => item.reconciled !== true
-        ).length
-    },
-
-    reconciliation: {
-      total:
-        reconciliationResult.count ??
-        reconciliations.length,
-
-      latest:
-        reconciliations[0] ||
-        null,
-
-      variance_records:
-        reconciliations.filter(
-          item => item.status === 'variance'
-        ).length
-    },
-
-    finance_close: {
-      total_checks:
-        closeChecksResult.count ??
-        closeChecks.length,
-
-      required_checks:
-        requiredChecks.length,
-
-      failed_required_checks:
-        failedChecks.length,
-
-      ready:
-        failedChecks.length === 0
-    },
-
-    media: {
-      latest_snapshot:
-        mediaResult.data ||
-        null
-    },
-
-    decisions: {
-      open_signals:
-        signalsResult.count ??
-        openSignals.length,
-
-      critical_signals:
-        openSignals.filter(
-          item => item.severity === 'critical'
-        ).length,
-
-      high_signals:
-        openSignals.filter(
-          item => item.severity === 'high'
-        ).length
-    }
-  };
-};
-
-/* =========================================================
-   V19 OVERVIEW
-   GET /api/admin/owner/v19/overview
-========================================================= */
-
-app.get(
-  '/api/admin/owner/v19/overview',
-
-  admin,
-
-  async (
-    request,
-    response
-  ) => {
-    try {
-      response.json(
-        await getV19Overview()
-      );
-
-    } catch (error) {
-      console.error(
-        '[V19] overview:',
-        error
-      );
-
-      response
-        .status(500)
-        .json({
-          ok: false,
-          error:
-            error.message ||
-            'Gagal memuat V19 overview'
-        });
-    }
-  }
-);
-
-/* =========================================================
-   V19 OWNER MONEY
-   GET /api/admin/owner/money
-========================================================= */
-
-app.get(
-  '/api/admin/owner/money',
-
-  admin,
-
-  async (
-    request,
-    response
-  ) => {
-    try {
-      const limit =
-        cleanLimit(
-          request.query.limit,
-          500,
-          100
-        );
-
-      const offset =
-        Math.max(
-          Number(
-            request.query.offset ||
-            0
-          ) || 0,
-          0
-        );
-
-      let query =
-        adminClient
-          .from('owner_money_ledger')
-          .select(
-            '*',
-            { count: 'exact' }
-          );
-
-      const reconciled =
-        parseOptionalBoolean(
-          request.query.reconciled
-        );
-
-      if (
-        reconciled !== null
-      ) {
-        query =
-          query.eq(
-            'reconciled',
-            reconciled
-          );
-      }
-
-      const status =
-        cleanText(
-          request.query.status,
-          40
-        );
-
-      if (status) {
-        query =
-          query.eq(
-            'reconciliation_status',
-            status
-          );
-      }
-
-      const {
-        data,
-        error,
-        count
-      } =
-        await query
-          .order(
-            'created_at',
-            { ascending: false }
-          )
-          .range(
-            offset,
-            offset + limit - 1
-          );
-
-      if (error) {
-        throw error;
-      }
-
-      response.json({
-        ok: true,
-        total: count || 0,
-        offset,
-        limit,
-        data: data || []
-      });
-
-    } catch (error) {
-      console.error(
-        '[V19] owner money:',
-        error
-      );
-
-      response
-        .status(500)
-        .json({
-          ok: false,
-          error:
-            error.message
-        });
-    }
-  }
-);
-
-/* =========================================================
-   V19 RECONCILIATIONS
-   GET /api/admin/owner/reconciliations
-========================================================= */
-
-app.get(
-  '/api/admin/owner/reconciliations',
-
-  admin,
-
-  async (
-    request,
-    response
-  ) => {
-    try {
-      const limit =
-        cleanLimit(
-          request.query.limit,
-          200,
-          50
-        );
-
-      let query =
-        adminClient
-          .from('owner_money_reconciliations')
-          .select(
-            '*',
-            { count: 'exact' }
-          );
-
-      const status =
-        cleanText(
-          request.query.status,
-          40
-        );
-
-      if (status) {
-        query =
-          query.eq(
-            'status',
-            status
-          );
-      }
-
-      const {
-        data,
-        error,
-        count
-      } =
-        await query
-          .order(
-            'period_end',
-            { ascending: false }
-          )
-          .limit(limit);
-
-      if (error) {
-        throw error;
-      }
-
-      response.json({
-        ok: true,
-        total: count || 0,
-        data: data || []
-      });
-
-    } catch (error) {
-      console.error(
-        '[V19] reconciliations:',
-        error
-      );
-
-      response
-        .status(500)
-        .json({
-          ok: false,
-          error:
-            error.message
-        });
-    }
-  }
-);
-
-/* =========================================================
-   V19 FINANCE CLOSE CHECKS
-   GET /api/admin/owner/finance-close
-========================================================= */
-
-app.get(
-  '/api/admin/owner/finance-close',
-
-  admin,
-
-  async (
-    request,
-    response
-  ) => {
-    try {
-      let query =
-        adminClient
-          .from('owner_finance_close_checks')
-          .select(
-            '*',
-            { count: 'exact' }
-          );
-
-      const periodMonth =
-        cleanText(
-          request.query.period_month,
-          20
-        );
-
-      if (periodMonth) {
-        query =
-          query.eq(
-            'period_month',
-            periodMonth
-          );
-      }
-
-      const {
-        data,
-        error,
-        count
-      } =
-        await query
-          .order(
-            'period_month',
-            { ascending: false }
-          )
-          .order(
-            'check_key',
-            { ascending: true }
-          )
-          .limit(200);
-
-      if (error) {
-        throw error;
-      }
-
-      response.json({
-        ok: true,
-        total: count || 0,
-        data: data || []
-      });
-
-    } catch (error) {
-      console.error(
-        '[V19] finance close:',
-        error
-      );
-
-      response
-        .status(500)
-        .json({
-          ok: false,
-          error:
-            error.message
-        });
-    }
-  }
-);
-
-/* =========================================================
-   V19 FINANCE CLOSE CHECK UPDATE
-   PATCH /api/admin/owner/finance-close/:id
-========================================================= */
-
-app.patch(
-  '/api/admin/owner/finance-close/:id',
-
-  admin,
-
-  async (
-    request,
-    response
-  ) => {
-    try {
-      if (
-        !validUuid(
-          request.params.id
-        )
-      ) {
-        return response
-          .status(400)
-          .json({
-            ok: false,
-            error:
-              'ID tidak valid'
-          });
-      }
-
-      const body =
-        request.body ||
-        {};
-
-      const payload =
-        {};
-
-      if (
-        Object.prototype.hasOwnProperty.call(
-          body,
-          'passed'
-        )
-      ) {
-        payload.passed =
-          body.passed === true;
-      }
-
-      if (
-        Object.prototype.hasOwnProperty.call(
-          body,
-          'value'
-        )
-      ) {
-        const value =
-          Number(body.value);
-
-        payload.value =
-          Number.isFinite(value)
-            ? value
-            : null;
-      }
-
-      if (
-        Object.prototype.hasOwnProperty.call(
-          body,
-          'notes'
-        )
-      ) {
-        payload.notes =
-          cleanText(
-            body.notes,
-            3000
-          ) || null;
-      }
-
-      payload.checked_at =
-        new Date().toISOString();
-
-      payload.checked_by =
-        request.user.id;
-
-      const {
-        data,
-        error
-      } =
-        await adminClient
-          .from('owner_finance_close_checks')
-          .update(payload)
-          .eq(
-            'id',
-            request.params.id
-          )
-          .select()
-          .single();
-
-      if (error) {
-        throw error;
-      }
-
-      response.json({
-        ok: true,
-        data
-      });
-
-    } catch (error) {
-      console.error(
-        '[V19] finance close update:',
-        error
-      );
-
-      response
-        .status(400)
-        .json({
-          ok: false,
-          error:
-            error.message
-        });
-    }
-  }
-);
-
-/* =========================================================
-   V19 MEDIA SNAPSHOTS
-   GET /api/admin/owner/media-snapshots
-========================================================= */
-
-app.get(
-  '/api/admin/owner/media-snapshots',
-
-  admin,
-
-  async (
-    request,
-    response
-  ) => {
-    try {
-      const limit =
-        cleanLimit(
-          request.query.limit,
-          500,
-          50
-        );
-
-      const {
-        data,
-        error,
-        count
-      } =
-        await adminClient
-          .from('owner_media_snapshots')
-          .select(
-            '*',
-            { count: 'exact' }
-          )
-          .order(
-            'snapshot_at',
-            { ascending: false }
-          )
-          .limit(limit);
-
-      if (error) {
-        throw error;
-      }
-
-      response.json({
-        ok: true,
-        total: count || 0,
-        data: data || []
-      });
-
-    } catch (error) {
-      console.error(
-        '[V19] media snapshots:',
-        error
-      );
-
-      response
-        .status(500)
-        .json({
-          ok: false,
-          error:
-            error.message
-        });
-    }
-  }
-);
-
-/* =========================================================
-   V19 DECISION SIGNALS
-   GET /api/admin/owner/decision-signals
-========================================================= */
-
-app.get(
-  '/api/admin/owner/decision-signals',
-
-  admin,
-
-  async (
-    request,
-    response
-  ) => {
-    try {
-      const limit =
-        cleanLimit(
-          request.query.limit,
-          500,
-          100
-        );
-
-      let query =
-        adminClient
-          .from('owner_decision_signals')
-          .select(
-            '*',
-            { count: 'exact' }
-          );
-
-      const status =
-        cleanText(
-          request.query.status,
-          40
-        );
-
-      const severity =
-        cleanText(
-          request.query.severity,
-          40
-        );
-
-      const area =
-        cleanText(
-          request.query.area,
-          100
-        );
-
-      if (status) {
-        query =
-          query.eq(
-            'status',
-            status
-          );
-      }
-
-      if (severity) {
-        query =
-          query.eq(
-            'severity',
-            severity
-          );
-      }
-
-      if (area) {
-        query =
-          query.eq(
-            'area',
-            area
-          );
-      }
-
-      const {
-        data,
-        error,
-        count
-      } =
-        await query
-          .order(
-            'created_at',
-            { ascending: false }
-          )
-          .limit(limit);
-
-      if (error) {
-        throw error;
-      }
-
-      response.json({
-        ok: true,
-        total: count || 0,
-        data: data || []
-      });
-
-    } catch (error) {
-      console.error(
-        '[V19] decision signals:',
-        error
-      );
-
-      response
-        .status(500)
-        .json({
-          ok: false,
-          error:
-            error.message
-        });
-    }
-  }
-);
-
-/* =========================================================
-   V19 DECISION SIGNAL UPDATE
-   PATCH /api/admin/owner/decision-signals/:id
-========================================================= */
-
-app.patch(
-  '/api/admin/owner/decision-signals/:id',
-
-  admin,
-
-  async (
-    request,
-    response
-  ) => {
-    try {
-      if (
-        !validUuid(
-          request.params.id
-        )
-      ) {
-        return response
-          .status(400)
-          .json({
-            ok: false,
-            error:
-              'ID tidak valid'
-          });
-      }
-
-      const allowedStatuses =
-        [
-          'open',
-          'acknowledged',
-          'resolved',
-          'dismissed'
-        ];
-
-      const requestedStatus =
-        cleanText(
-          request.body?.status,
-          40
-        );
-
-      if (
-        !allowedStatuses.includes(
-          requestedStatus
-        )
-      ) {
-        return response
-          .status(400)
-          .json({
-            ok: false,
-            error:
-              'Status tidak valid'
-          });
-      }
-
-      const payload = {
-        status:
-          requestedStatus,
-
-        resolved_at:
-          requestedStatus === 'resolved'
-            ? new Date().toISOString()
-            : null
-      };
-
-      const {
-        data,
-        error
-      } =
-        await adminClient
-          .from('owner_decision_signals')
-          .update(payload)
-          .eq(
-            'id',
-            request.params.id
-          )
-          .select()
-          .single();
-
-      if (error) {
-        throw error;
-      }
-
-      response.json({
-        ok: true,
-        data
-      });
-
-    } catch (error) {
-      console.error(
-        '[V19] decision signal update:',
-        error
-      );
-
-      response
-        .status(400)
-        .json({
-          ok: false,
-          error:
-            error.message
-        });
-    }
-  }
-);
-
-/* =========================================================
-   V19 FUNCTIONAL HEALTH
-   GET /api/admin/owner/v19/health
-========================================================= */
-
-app.get(
-  '/api/admin/owner/v19/health',
-
-  admin,
-
-  async (
-    request,
-    response
-  ) => {
-    try {
-      const tableNames = [
-        'owner_money_ledger',
-        'owner_money_reconciliations',
-        'owner_finance_close_checks',
-        'owner_media_snapshots',
-        'owner_decision_signals'
-      ];
-
-      const results =
-        await Promise.all(
-          tableNames.map(
-            tableName =>
-              adminClient
-                .from(tableName)
-                .select(
-                  'id',
-                  {
-                    head: true,
-                    count: 'exact'
-                  }
-                )
-          )
-        );
-
-      const tables = {};
-
-      results.forEach(
-        (
-          result,
-          index
-        ) => {
-          tables[
-            tableNames[index]
-          ] = {
-            ok:
-              !result.error,
-
-            count:
-              result.count || 0,
-
-            error:
-              result.error
-                ? result.error.message
-                : null
-          };
-        }
-      );
-
-      const failed =
-        Object.values(tables)
-          .filter(
-            item => !item.ok
-          );
-
-      response
-        .status(
-          failed.length
-            ? 503
-            : 200
-        )
-        .json({
-          ok:
-            failed.length === 0,
-
-          version:
-            'V19',
-
-          checked_at:
-            new Date().toISOString(),
-
-          tables
-        });
-
-    } catch (error) {
-      console.error(
-        '[V19] health:',
-        error
-      );
-
-      response
-        .status(500)
-        .json({
-          ok: false,
-          version: 'V19',
-          error:
-            error.message
-        });
-    }
-  }
-);
-
-/* =========================================================
-   END V19 OWNER API
-========================================================= */
-
-
-
 /* =========================================================
    HOMEPAGE
 ========================================================= */
@@ -7022,6 +5975,198 @@ app.use(
     }
   )
 );
+
+
+/* =========================================================
+   MUDA INDONESIA V19 OWNER API INTEGRATION
+========================================================= */
+
+const v19Boolean = value => {
+  if (value === true || value === 'true' || value === 1 || value === '1') return true;
+  if (value === false || value === 'false' || value === 0 || value === '0') return false;
+  return null;
+};
+
+const v19Uuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
+
+app.get('/api/admin/owner/v19/overview', admin, async (request, response) => {
+  try {
+    const [money, reconciliations, closeChecks, media, signals] = await Promise.all([
+      adminClient.from('owner_money_ledger').select('id, canonical_key, reconciled, reconciliation_status').limit(10000),
+      adminClient.from('owner_money_reconciliations').select('id, period_start, period_end, status, variance_in, variance_out, created_at').order('created_at', { ascending: false }).limit(50),
+      adminClient.from('owner_finance_close_checks').select('id, period_month, check_key, label, required, passed').order('period_month', { ascending: false }).limit(100),
+      adminClient.from('owner_media_snapshots').select('*').order('snapshot_at', { ascending: false }).limit(1).maybeSingle(),
+      adminClient.from('owner_decision_signals').select('id, signal_key, area, severity, score, confidence, title, status, created_at').eq('status', 'open').order('created_at', { ascending: false }).limit(20)
+    ]);
+
+    const firstError = money.error || reconciliations.error || closeChecks.error || media.error || signals.error;
+    if (firstError) throw firstError;
+
+    const moneyRows = money.data || [];
+    const reconciliationRows = reconciliations.data || [];
+    const closeCheckRows = closeChecks.data || [];
+    const signalRows = signals.data || [];
+    const requiredChecks = closeCheckRows.filter(row => row.required === true);
+    const failedChecks = requiredChecks.filter(row => row.passed !== true);
+
+    response.json({
+      ok: true,
+      version: 'V19',
+      generated_at: new Date().toISOString(),
+      money: {
+        total_records: moneyRows.length,
+        canonical_records: moneyRows.filter(row => row.canonical_key).length,
+        unreconciled_records: moneyRows.filter(row => row.reconciled !== true).length
+      },
+      reconciliation: {
+        total: reconciliationRows.length,
+        latest: reconciliationRows[0] || null,
+        variance_records: reconciliationRows.filter(row => row.status === 'variance').length
+      },
+      finance_close: {
+        total_checks: closeCheckRows.length,
+        required_checks: requiredChecks.length,
+        failed_required_checks: failedChecks.length,
+        ready: failedChecks.length === 0
+      },
+      media: { latest_snapshot: media.data || null },
+      decisions: {
+        open_signals: signalRows.length,
+        critical_signals: signalRows.filter(row => row.severity === 'critical').length,
+        high_signals: signalRows.filter(row => row.severity === 'high').length
+      }
+    });
+  } catch (error) {
+    console.error('[V19 overview]', error);
+    response.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.get('/api/admin/owner/money', admin, async (request, response) => {
+  try {
+    const limit = cleanLimit(request.query.limit, 500, 100);
+    const offset = Math.max(Number(request.query.offset || 0), 0);
+    let query = adminClient.from('owner_money_ledger').select('*', { count: 'exact' });
+    const reconciled = v19Boolean(request.query.reconciled);
+    const status = cleanText(request.query.status, 40);
+    if (reconciled !== null) query = query.eq('reconciled', reconciled);
+    if (status) query = query.eq('reconciliation_status', status);
+    const { data, error, count } = await query.order('created_at', { ascending: false }).range(offset, offset + limit - 1);
+    if (error) throw error;
+    response.json({ ok: true, total: count || 0, offset, limit, data: data || [] });
+  } catch (error) {
+    response.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.get('/api/admin/owner/reconciliations', admin, async (request, response) => {
+  try {
+    const limit = cleanLimit(request.query.limit, 200, 50);
+    let query = adminClient.from('owner_money_reconciliations').select('*');
+    const status = cleanText(request.query.status, 40);
+    if (status) query = query.eq('status', status);
+    const { data, error } = await query.order('period_end', { ascending: false }).limit(limit);
+    if (error) throw error;
+    response.json({ ok: true, data: data || [] });
+  } catch (error) {
+    response.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.get('/api/admin/owner/finance-close', admin, async (request, response) => {
+  try {
+    let query = adminClient.from('owner_finance_close_checks').select('*');
+    const month = cleanText(request.query.period_month, 20);
+    if (month) query = query.eq('period_month', month);
+    const { data, error } = await query.order('period_month', { ascending: false }).order('check_key', { ascending: true }).limit(200);
+    if (error) throw error;
+    response.json({ ok: true, data: data || [] });
+  } catch (error) {
+    response.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.patch('/api/admin/owner/finance-close/:id', admin, async (request, response) => {
+  try {
+    if (!v19Uuid(request.params.id)) return response.status(400).json({ error: 'ID tidak valid' });
+    const body = request.body || {};
+    const payload = {
+      passed: body.passed === true,
+      checked_at: new Date().toISOString(),
+      checked_by: request.user.id
+    };
+    if (body.value !== undefined) {
+      const numeric = Number(body.value);
+      if (!Number.isFinite(numeric)) return response.status(400).json({ error: 'Value harus berupa angka' });
+      payload.value = numeric;
+    }
+    if (body.notes !== undefined) payload.notes = cleanText(body.notes, 3000) || null;
+    const { data, error } = await adminClient.from('owner_finance_close_checks').update(payload).eq('id', request.params.id).select().single();
+    if (error) throw error;
+    response.json({ ok: true, data });
+  } catch (error) {
+    response.status(400).json({ ok: false, error: error.message });
+  }
+});
+
+app.get('/api/admin/owner/media-snapshots', admin, async (request, response) => {
+  try {
+    const limit = cleanLimit(request.query.limit, 500, 50);
+    const { data, error } = await adminClient.from('owner_media_snapshots').select('*').order('snapshot_at', { ascending: false }).limit(limit);
+    if (error) throw error;
+    response.json({ ok: true, data: data || [] });
+  } catch (error) {
+    response.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.get('/api/admin/owner/decision-signals', admin, async (request, response) => {
+  try {
+    const limit = cleanLimit(request.query.limit, 500, 100);
+    let query = adminClient.from('owner_decision_signals').select('*');
+    const status = cleanText(request.query.status, 40);
+    const severity = cleanText(request.query.severity, 40);
+    const area = cleanText(request.query.area, 100);
+    if (status) query = query.eq('status', status);
+    if (severity) query = query.eq('severity', severity);
+    if (area) query = query.eq('area', area);
+    const { data, error } = await query.order('created_at', { ascending: false }).limit(limit);
+    if (error) throw error;
+    response.json({ ok: true, data: data || [] });
+  } catch (error) {
+    response.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+app.patch('/api/admin/owner/decision-signals/:id', admin, async (request, response) => {
+  try {
+    if (!v19Uuid(request.params.id)) return response.status(400).json({ error: 'ID tidak valid' });
+    const status = cleanText(request.body?.status, 40);
+    const allowed = ['open', 'acknowledged', 'resolved', 'dismissed'];
+    if (!allowed.includes(status)) return response.status(400).json({ error: 'Status tidak valid' });
+    const payload = { status, resolved_at: status === 'resolved' ? new Date().toISOString() : null };
+    const { data, error } = await adminClient.from('owner_decision_signals').update(payload).eq('id', request.params.id).select().single();
+    if (error) throw error;
+    response.json({ ok: true, data });
+  } catch (error) {
+    response.status(400).json({ ok: false, error: error.message });
+  }
+});
+
+app.get('/api/admin/owner/v19/health', admin, async (request, response) => {
+  try {
+    const names = ['owner_money_ledger', 'owner_money_reconciliations', 'owner_finance_close_checks', 'owner_media_snapshots', 'owner_decision_signals'];
+    const results = await Promise.all(names.map(name => adminClient.from(name).select('id', { head: true, count: 'exact' })));
+    const tables = {};
+    results.forEach((result, index) => {
+      tables[names[index]] = { ok: !result.error, count: result.count || 0, error: result.error ? result.error.message : null };
+    });
+    const ok = Object.values(tables).every(item => item.ok);
+    response.status(ok ? 200 : 503).json({ ok, version: 'V19', checked_at: new Date().toISOString(), tables });
+  } catch (error) {
+    response.status(500).json({ ok: false, version: 'V19', error: error.message });
+  }
+});
 
 /* =========================================================
    404 HANDLER
