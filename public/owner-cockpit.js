@@ -311,3 +311,22 @@
   });
 
 })();
+
+// V19 UX: keyboard command palette + public CMS preview actions.
+(() => {
+  document.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      const el = document.getElementById('ownerCommandText');
+      if (el) { document.querySelector('[data-target="command"]')?.click(); el.focus(); }
+    }
+  });
+  const bindPublicButtons = () => {
+    const preview = document.getElementById('bizPublicPreview');
+    const open = document.getElementById('bizPublicOpen');
+    const slug = () => document.getElementById('bizPageSlug')?.value || '/vision-mission.html';
+    if (preview) preview.onclick = () => window.open('/api/site/pages/' + encodeURIComponent(slug().replace(/^\//,'')), '_blank', 'noopener');
+    if (open) open.onclick = () => window.open(slug(), '_blank', 'noopener');
+  };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bindPublicButtons); else bindPublicButtons();
+})();
