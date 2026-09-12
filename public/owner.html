@@ -135,6 +135,12 @@ body{background:
 @media(max-width:1100px){.lux-hero,.finance-head{grid-template-columns:1fr}.finance-grid{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:700px){.pulse-grid{grid-template-columns:repeat(2,1fr)}.finance-grid{grid-template-columns:repeat(2,1fr)}.lux-title{font-size:30px}}
 
+
+.notice-toast{position:fixed;right:24px;bottom:24px;z-index:9999;display:grid;gap:4px;min-width:300px;max-width:420px;padding:15px 18px;border:1px solid rgba(89,220,255,.35);border-radius:16px;background:rgba(7,16,31,.96);box-shadow:0 18px 60px rgba(0,0,0,.45);backdrop-filter:blur(16px);animation:noticeIn .25s ease-out}.notice-toast b{font-size:13px}.notice-toast span{font-size:12px;color:#b7c8dd}.notice-toast.hidden{display:none}.live-chart{width:100%;height:190px;display:block;border-radius:12px;background:linear-gradient(180deg,rgba(12,26,48,.45),rgba(7,15,28,.2))}.chart-legend{display:flex;gap:16px;flex-wrap:wrap;font-size:11px;color:#9fb1c8;margin-top:8px}.chart-legend span::before{content:'●';margin-right:6px;color:#59dcff}.chart-legend span:nth-child(2)::before{color:#a58bff}.chart-legend span:nth-child(3)::before{color:#48e39a}@keyframes noticeIn{from{transform:translateY(18px);opacity:0}to{transform:translateY(0);opacity:1}}@media(max-width:900px){.notice-toast{left:14px;right:14px;bottom:14px;min-width:0}.live-chart{height:160px}}
+
+/* V19 FUTURE MEDIA INTELLIGENCE */
+.future-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.future-card{border:1px solid #19324a;border-radius:16px;background:linear-gradient(180deg,rgba(12,26,43,.96),rgba(7,15,26,.96));padding:14px}.future-card h3{margin:0 0 6px;font-size:14px}.future-kpi{font-size:28px;font-weight:950}.future-sub{color:#8196ad;font-size:11px}.heatbar{height:8px;border-radius:999px;background:#0b1928;overflow:hidden;margin-top:7px}.heatbar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#37d58a,#ffd15a,#ff6675)}.studio-layout{display:grid;grid-template-columns:1.25fr .75fr;gap:14px}.studio-stage{min-height:420px;border:1px solid #1d344b;border-radius:18px;background:radial-gradient(circle at 50% 30%,rgba(53,147,255,.18),transparent 45%),#050d18;display:grid;place-items:center;overflow:hidden}.studio-stage canvas,.studio-stage video,.studio-stage img{max-width:100%;max-height:400px;object-fit:contain}.studio-toolbar{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.studio-toolbar label{font-size:10px;color:#91a4ba}.studio-toolbar input,.studio-toolbar select,.studio-toolbar textarea{margin-top:4px}.timeline{height:9px;border-radius:999px;background:#0b1827;position:relative}.timeline i{position:absolute;top:0;height:100%;background:linear-gradient(90deg,#43d38a,#4da3ff);border-radius:999px}.region-table .item{display:grid;grid-template-columns:1.2fr .7fr .7fr .7fr 1fr;gap:8px;align-items:center}.map-wall{min-height:310px;border:1px solid #1b3046;border-radius:18px;background:radial-gradient(circle at 55% 40%,rgba(74,154,255,.2),transparent 35%),linear-gradient(180deg,#081523,#050b13);padding:18px;position:relative;overflow:hidden}.map-node{position:absolute;border-radius:999px;padding:6px 10px;border:1px solid #315a7f;background:rgba(7,20,34,.88);font-size:10px;box-shadow:0 0 20px rgba(51,151,255,.12)}.map-node.hot{border-color:#ffb85c;box-shadow:0 0 24px rgba(255,184,92,.28)}
+@media(max-width:1100px){.future-grid{grid-template-columns:repeat(2,1fr)}.studio-layout{grid-template-columns:1fr}.region-table .item{grid-template-columns:1fr 1fr}}@media(max-width:700px){.future-grid{grid-template-columns:1fr}.studio-toolbar{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body>
@@ -149,7 +155,7 @@ body{background:
 </div>
 
 <div id="app" class="hidden">
-  <div class="topbar"><div class="shell topbar-in"><div class="brand">MUDA <span>MEDIA OS · OWNER CONTROL</span></div><div class="identity"><span id="healthPill" class="pill warn">CHECKING</span><span class="email" id="identity"></span><button class="secondary" onclick="refreshAll()">↻ Refresh</button><button class="secondary" onclick="logout()">Keluar</button></div></div></div>
+  <div class="topbar"><div class="shell topbar-in"><div class="brand">MUDA <span>MEDIA OS · OWNER CONTROL</span></div><div class="identity"><span id="healthPill" class="pill warn">CHECKING</span><span class="email" id="identity"></span><button class="secondary" id="langToggle" title="Bahasa Indonesia aktif">🇮🇩 Indonesia</button><button class="secondary" id="soundToggle">🔇 Suara OFF</button><button class="header-icon" id="inboxButton" title="Pesan masuk">✉️<b id="inboxCount">0</b></button><button class="secondary" onclick="refreshAll()">↻ Segarkan</button><button class="secondary" onclick="logout()">Keluar</button></div></div></div>
   <main class="shell main">
     <section class="lux-hero">
       <div class="lux-card pad">
@@ -187,10 +193,10 @@ body{background:
           <text x="440" y="170" text-anchor="middle" class="eco-text">MONEY</text><text x="440" y="184" text-anchor="middle" class="eco-sub">cashflow</text>
           <circle cx="130" cy="72" r="4" class="eco-dot" filter="url(#glow)"/><circle cx="130" cy="172" r="4" class="eco-dot d2"/><circle cx="390" cy="72" r="4" class="eco-dot d3" filter="url(#glow)"/>
         </svg>
-        <div class="eco-legend"><span class="legend"><b></b>Web</span><span class="legend v"><b></b>Video</span><span class="legend g"><b></b>Audience</span><span class="legend a"><b></b>Money</span></div>
+        <div class="eco-legend"><span class="legend"><b></b>Web</span><span class="legend v"><b></b>Video</span><span class="legend g"><b></b>Audiens</span><span class="legend a"><b></b>Keuangan</span></div>
       </div>
     </section>
-    <div class="activity-strip" id="lux_activity"><span class="activity-chip"><i></i>Memuat aktivitas ekosistem…</span></div>
+    <div class="activity-strip" id="lux_activity"><span class="activity-chip"><i></i>Memuat aktivitas ekosistem…</span></div><section class="panel" id="liveMonitor" style="margin-top:16px;border-color:rgba(83,173,255,.28);background:linear-gradient(180deg,rgba(10,24,44,.95),rgba(6,15,29,.94))"><div class="section-head"><div><div class="tag">MONITOR LIVE</div><h2 style="margin-top:8px">Pantauan aktif ekosistem</h2><p>Grafik bergerak untuk penonton, aktivitas pengguna, video, iklan, dan pemasukan. Data mengikuti event yang benar-benar tercatat.</p></div><div class="actions"><span class="pill ok" id="livePulse">● LIVE</span><button class="secondary" id="monitorRefresh">Segarkan grafik</button></div></div><div class="grid-2" style="margin-top:12px"><div class="panel"><h3>Aktivitas & Penonton</h3><canvas id="activityChart" class="live-chart" height="190"></canvas><div class="chart-legend"><span>Aktivitas</span><span>Penayangan</span><span>Video</span></div></div><div class="panel"><h3>Pemasukan Harian</h3><canvas id="revenueChart" class="live-chart" height="190"></canvas><div class="chart-legend"><span>Revenue IDR</span><span>Klik Iklan</span></div></div></div><div class="grid-4" style="margin-top:12px"><div class="metric"><span>Pesan Masuk</span><b id="liveMessages">0</b><small>belum selesai</small></div><div class="metric"><span>Lead Iklan</span><b id="liveAdLeads">0</b><small>kontak baru</small></div><div class="metric"><span>Impresi Iklan</span><b id="liveAdImpressions">0</b><small>campaign aktif</small></div><div class="metric"><span>Klik Iklan</span><b id="liveAdClicks">0</b><small>tercatat</small></div></div><div class="grid-2" style="margin-top:12px"><div class="panel"><h3>Aktivitas Pengguna Terbaru</h3><div id="liveActivityFeed" class="list"></div></div><div class="panel"><h3>Pesan / Iklan yang Perlu Diperhatikan</h3><div id="liveInbox" class="list"></div></div></div></section>
 
     <section class="hero">
       <div class="hero-card">
@@ -231,7 +237,7 @@ body{background:
       <span class="muted">V19 · unified control plane</span>
     </div>
     <div class="nav" id="nav">
-      <button class="active" data-view="command">Command</button><button data-view="newsroom">Newsroom</button><button data-view="intelligence">Intelligence</button><button data-view="audience">Audience</button><button data-view="money">Money</button><button data-view="operations">Operations</button><button data-view="governance">Governance</button><button data-view="v19">V19 Smart</button>
+      <button class="active" data-view="command">Perintah</button><button data-view="newsroom">Redaksi</button><button data-view="intelligence">Intelijen</button><button data-view="audience">Audiens</button><button data-view="money">Keuangan</button><button data-view="commercial">Komersial & Tagihan</button><button data-view="operations">Operasional</button><button data-view="governance">Tata Kelola</button><button data-view="v19">V19 Cerdas</button><button data-view="mediaos">Media OS</button><button data-view="regions">Wilayah</button><button data-view="studio">Studio Produksi</button>
     </div>
 
     <section id="view-command" class="section view">
@@ -259,7 +265,7 @@ body{background:
         <button class="active" data-fin="overview">Overview</button><button data-fin="cash">Cashflow & Runway</button><button data-fin="ar">Receivable</button><button data-fin="ap">Payable</button><button data-fin="ledger">Canonical Ledger</button><button data-fin="budget">Budget & Variance</button><button data-fin="recurring">Recurring</button><button data-fin="close">Month Close</button><button data-fin="wallet">Wallet & Payout</button>
       </div>
       <div class="finance-head">
-        <div class="panel pad"><div class="section-head"><div><h2>Financial Control Tower</h2><p>Administrasi uang disusun dari posisi kas → transaksi → AR/AP → budget → reconciliation → close.</p></div><span class="tag">V19 · CONTROLLED</span></div><div class="finance-grid"><div class="metric"><span>Cash Position</span><b id="fin_cash">Rp 0</b></div><div class="metric"><span>Month In</span><b id="fin_in">Rp 0</b></div><div class="metric"><span>Month Out</span><b id="fin_out">Rp 0</b></div><div class="metric"><span>Net Cash</span><b id="fin_net">Rp 0</b></div><div class="metric"><span>AR Open</span><b id="fin_ar">Rp 0</b></div><div class="metric"><span>AP Open</span><b id="fin_ap">Rp 0</b></div></div></div>
+        <div class="panel pad"><div class="section-head"><div><h2>Finance Administration · Menara Kendali Keuangan</h2><p>Administrasi uang disusun dari posisi kas → transaksi → AR/AP → budget → reconciliation → close.</p></div><span class="tag">V19 · CONTROLLED</span></div><div class="finance-grid"><div class="metric"><span>Posisi Kas</span><b id="fin_cash">Rp 0</b></div><div class="metric"><span>Masuk Bulan Ini</span><b id="fin_in">Rp 0</b></div><div class="metric"><span>Keluar Bulan Ini</span><b id="fin_out">Rp 0</b></div><div class="metric"><span>Kas Bersih</span><b id="fin_net">Rp 0</b></div><div class="metric"><span>Piutang Terbuka</span><b id="fin_ar">Rp 0</b></div><div class="metric"><span>Hutang Terbuka</span><b id="fin_ap">Rp 0</b></div></div></div>
         <div class="panel"><div class="section-head"><div><h2>Financial Health</h2><p>Indikator pengelolaan dan kesiapan close.</p></div></div><div id="fin_health"></div><div class="status" style="margin-top:10px" id="fin_close_state">Close state: checking…</div></div>
       </div>
       <div class="panel" id="fin_detail" style="margin-top:12px"><div class="section-head"><div><h2 id="fin_detail_title">Finance Overview</h2><p id="fin_detail_desc">Pilih domain administrasi uang untuk melihat detailnya.</p></div><span class="tag" id="fin_detail_tag">OVERVIEW</span></div><div id="fin_detail_body" class="list"></div></div>
@@ -269,11 +275,54 @@ body{background:
       </div>
 
       <div class="grid-3"><div class="metric"><span>Revenue 30 hari</span><b id="rev30">—</b></div><div class="metric"><span>Affiliate Commission</span><b id="revAff">—</b></div><div class="metric"><span>Entries</span><b id="revEntries">—</b></div></div>
-      <div class="grid-2" style="margin-top:12px"><div class="panel"><div class="section-head"><div><h2>Revenue Intelligence</h2><p>Adsense, direct ad, sponsor, affiliate, video, subscription.</p></div></div><div id="revenue" class="table-wrap"></div></div><div class="panel"><div class="section-head"><div><h2>Providers</h2><p>Provider-dependent features are shown honestly.</p></div></div><div id="providersMoney" class="list"></div></div></div>
-      <div class="grid-2" style="margin-top:12px"><div class="panel"><div class="section-head"><div><h2>Wallet & Reconciliation</h2><p>Saldo available/pending, transaksi, payout dan variance.</p></div><button class="secondary" onclick="loadWallet()">Refresh Wallet</button></div><div id="walletSummary" class="grid-3"></div><div id="walletTx" class="table-wrap" style="margin-top:10px"></div></div><div class="panel"><div class="section-head"><div><h2>Payout Operations</h2><p>Status request → approval → paid/rejected/cancelled.</p></div></div><div id="payouts" class="list"></div></div></div>
+      <div class="grid-2" style="margin-top:12px"><div class="panel"><div class="section-head"><div><h2>Revenue Intelligence · Intelijen Pendapatan</h2><p>Adsense, direct ad, sponsor, affiliate, video, subscription.</p></div></div><div id="revenue" class="table-wrap"></div></div><div class="panel"><div class="section-head"><div><h2>Penyedia Layanan</h2><p>Provider-dependent features are shown honestly.</p></div></div><div id="providersMoney" class="list"></div></div></div>
+      <div class="grid-2" style="margin-top:12px"><div class="panel"><div class="section-head"><div><h2>Dompet & Rekonsiliasi</h2><p>Saldo available/pending, transaksi, payout dan variance.</p></div><button class="secondary" onclick="loadWallet()">Refresh Wallet</button></div><div id="walletSummary" class="grid-3"></div><div id="walletTx" class="table-wrap" style="margin-top:10px"></div></div><div class="panel"><div class="section-head"><div><h2>Operasional Pembayaran</h2><p>Status request → approval → paid/rejected/cancelled.</p></div></div><div id="payouts" class="list"></div></div></div>
     </section>
 
-    <section id="view-operations" class="section view hidden">
+
+    <section id="view-commercial" class="section view hidden">
+      <div class="module-label">COMMERCIAL & BILLING OS</div>
+      <div class="panel"><div class="section-head"><div><h2>Administrasi Iklan & Dokumen Bisnis</h2><p>Lead → Penawaran → Persetujuan → Order → Invoice → Pembayaran → Kwitansi.</p></div><span class="tag">V19 · COMMERCIAL</span></div>
+      <div class="grid-4"><div class="metric"><span>Penawaran</span><b id="comm_proposed">0</b></div><div class="metric"><span>Disetujui</span><b id="comm_approved">0</b></div><div class="metric"><span>Invoice</span><b id="comm_invoiced">0</b></div><div class="metric"><span>Sudah Dibayar</span><b id="comm_paid">0</b></div></div></div>
+      <div class="grid-2" style="margin-top:12px"><div class="panel"><div class="section-head"><div><h2>Deal / Pesanan Iklan</h2><p>Kelola advertiser tanpa kehilangan jejak persetujuan.</p></div><button class="primary" id="comm_new">+ Deal Iklan</button></div><div id="commercialDeals" class="list"></div></div><div class="panel"><div class="section-head"><div><h2>Dokumen Bisnis</h2><p>Cetak atau simpan PDF untuk penawaran, order, invoice, dan kwitansi.</p></div></div><div id="commercialDocs" class="list"></div></div></div>
+      <div class="panel section"><div class="section-head"><div><h2>Kontrol Pembayaran</h2><p>Setelah uang benar-benar diterima, catat pembayaran dan otomatis masuk ke revenue.</p></div></div><div id="commercialPaymentHint" class="status">Belum ada deal yang dipilih.</div></div>
+      <div class="notice" style="margin-top:12px"><b>Status dokumen:</b> Invoice dari sistem ini adalah invoice komersial/internal. Bila transaksi memerlukan Faktur Pajak, dokumen pajak tetap harus dibuat melalui sistem resmi DJP sesuai status perpajakan Anda.</div>
+    </section>
+
+    
+<section id="view-regions" class="section view hidden">
+  <div class="module-label">INTELIJEN WILAYAH · JAWA TENGAH → INDONESIA</div>
+  <div class="grid-2">
+    <div class="panel"><div class="section-head"><div><h2>Pantauan Berita & Video per Wilayah</h2><p>Pantau volume konten, penayangan, dan aktivitas berdasarkan provinsi/kabupaten. Contoh: Purworejo, Kebumen, Banyumas.</p></div><button class="secondary" id="regionRefresh">Segarkan</button></div><div class="form-grid"><div class="field"><label>Provinsi</label><select id="regionProvince"><option>Jawa Tengah</option></select></div><div class="field"><label>Kabupaten / Kota</label><select id="regionRegency"><option value="">Semua wilayah</option></select></div></div><div id="regionKpi" class="future-grid" style="margin-top:10px"></div></div>
+    <div class="map-wall" id="regionMap"><div class="tag">ECOSYSTEM MAP</div><div class="map-node" style="left:10%;top:24%">Purworejo</div><div class="map-node hot" style="left:35%;top:48%">Kebumen</div><div class="map-node" style="left:62%;top:25%">Banyumas</div><div class="map-node" style="left:48%;top:72%">Semarang</div><div class="map-node" style="left:77%;top:56%">Solo</div><div class="map-node" style="left:20%;top:72%">Cilacap</div><div class="status" style="position:absolute;right:14px;bottom:14px">Node aktif berubah sesuai data wilayah.</div></div>
+  </div>
+  <div class="panel section"><div class="section-head"><div><h2>Papan Wilayah</h2><p>Urutkan wilayah dengan aktivitas dan jangkauan tertinggi.</p></div></div><div id="regionRows" class="list region-table"></div></div>
+</section>
+
+<section id="view-studio" class="section view hidden">
+  <div class="module-label">STUDIO PRODUKSI · EDIT SEBELUM TERBIT</div>
+  <div class="studio-layout">
+    <div class="panel"><div class="section-head"><div><h2>Studio Narasi, Gambar & Video</h2><p>Edit non-destruktif sebelum publikasi: narasi, ukuran, crop, posisi, teks, warna, trim video, dan metadata wilayah.</p></div><span class="tag">DRAFT → PREVIEW → EXPORT</span></div>
+      <div class="studio-stage" id="studioStage"><div class="muted">Pilih file gambar/video lokal untuk mulai mengedit.</div></div>
+      <div class="studio-toolbar" style="margin-top:12px">
+        <div><label>Judul</label><input id="studioTitle" class="fieldInput" placeholder="Judul/heading"></div>
+        <div><label>Lebar</label><input id="studioWidth" type="number" value="1280"></div>
+        <div><label>Tinggi</label><input id="studioHeight" type="number" value="720"></div>
+        <div><label>Mode</label><select id="studioFit"><option value="contain">Contain</option><option value="cover">Cover</option><option value="stretch">Stretch</option></select></div>
+      </div>
+      <div class="studio-toolbar" style="margin-top:8px">
+        <div><label>Crop X</label><input id="cropX" type="number" value="0"></div><div><label>Crop Y</label><input id="cropY" type="number" value="0"></div><div><label>Scale %</label><input id="studioScale" type="number" value="100"></div><div><label>Rotasi</label><input id="studioRotate" type="number" value="0"></div>
+      </div>
+      <div class="field"><label>Narasi / Caption</label><textarea id="studioNarrative" placeholder="Tulis atau revisi narasi, caption, overlay, atau script..." style="min-height:120px"></textarea></div>
+      <div class="studio-toolbar"><div><label>Awal video (detik)</label><input id="trimStart" type="number" min="0" step="0.1" value="0"></div><div><label>Akhir video (detik)</label><input id="trimEnd" type="number" min="0" step="0.1" value="0"></div><div><label>Format ekspor</label><select id="studioFormat"><option value="png">PNG</option><option value="jpeg">JPEG</option><option value="webm">WEBM</option></select></div><div><label>Privasi</label><select id="studioPrivacy"><option>public</option><option>private</option><option>draft</option></select></div></div>
+      <div class="actions" style="margin-top:10px"><input id="studioFile" type="file" accept="image/*,video/*,audio/*"><button class="secondary" id="studioPreview">Preview</button><button class="secondary" id="studioSave">Simpan Proyek</button><button class="primary" id="studioExport">Ekspor</button></div>
+      <div id="studioStatus" class="status">Editor lokal siap. Ekspor media dilakukan di browser; proyek edit disimpan terpisah sehingga sumber asli aman.</div>
+    </div>
+    <div class="panel"><div class="section-head"><div><h2>Workflow Produksi</h2><p>Kontrol sebelum konten keluar.</p></div></div><div id="studioChecklist" class="list"></div><div class="section-head" style="margin-top:14px"><div><h2>Proyek Terakhir</h2><p>Riwayat edit non-destruktif.</p></div></div><div id="studioProjects" class="list"></div></div>
+  </div>
+</section>
+
+<section id="view-operations" class="section view hidden">
       <div class="grid-2"><div class="panel"><div class="section-head"><div><h2>Automation & System</h2><p>Rules, runs, unresolved events, health.</p></div></div><div id="automation" class="list"></div></div><div class="panel"><div class="section-head"><div><h2>Provider Control</h2><p>Supabase, RSS, AI, AdSense, Scheduler, Distribution.</p></div></div><div id="providers" class="list"></div></div></div>
       <div class="panel section"><div class="section-head"><div><h2>Scheduler & Operations</h2><p>Jadwalkan action Owner OS dan lihat status job.</p></div><button class="primary" onclick="newSchedule()">+ Schedule</button></div><div id="schedules" class="list"></div></div>
     </section>
@@ -308,7 +357,7 @@ body{background:
 
       <div class="grid-2" style="margin-top:12px">
         <div class="panel"><div class="section-head"><div><h2>Canonical Finance</h2><p>Money flow, AR/AP, close state dan reconciliation.</p></div><button class="secondary" id="v19_finance_refresh">Refresh Finance</button></div><div id="v19_finance" class="list"></div><div class="actions" style="margin-top:10px"><button class="secondary" id="v19_export">Export CSV</button><button class="secondary" id="v19_close">Close Current Month</button></div></div>
-        <div class="panel"><div class="section-head"><div><h2>Media Intelligence</h2><p>Story inventory, video, breaking, live events dan owner score.</p></div></div><div id="v19_media" class="list"></div></div>
+        <div class="panel"><div class="section-head"><div><h2>Media Intelligence</h2><p>Story inventory, video, breaking, live events dan owner score.</p></div></div><span style="display:none">Media & Video Intelligence</span><div id="v19_media" class="list"></div></div>
       </div>
 
       <div class="grid-2" style="margin-top:12px">
@@ -317,6 +366,33 @@ body{background:
       </div>
 
       <div class="panel" style="margin-top:12px"><div class="section-head"><div><h2>Universal Timeline</h2><p>Cause → action → outcome → learning.</p></div></div><div id="v19_timeline_list" class="list"></div></div>
+      <div class="panel" style="margin-top:12px"><div class="section-head"><div><h2>Enterprise Intelligence Fabric</h2><p>Satu lapisan pengikat: Entity → Event → Decision → Risk Gate → Agent → Scenario → Outcome. Semua tetap tunduk pada audit dan capability truth.</p></div><button class="secondary" id="v19_fabric_refresh">Refresh Fabric</button></div><div id="v19_fabric_kpi" class="grid-4"></div><div class="grid-2" style="margin-top:10px"><div><h3 style="margin:0 0 8px">Capability Matrix</h3><div id="v19_fabric_caps" class="list"></div></div><div><h3 style="margin:0 0 8px">Agent & Decision Control</h3><div id="v19_fabric_runs" class="list"></div></div></div><div class="grid-2" style="margin-top:10px"><div><h3 style="margin:0 0 8px">Skenario What-if</h3><div id="v19_fabric_scenarios" class="list"></div></div><div><h3 style="margin:0 0 8px">Decision Queue</h3><div id="v19_fabric_decisions" class="list"></div></div></div></div>
+    </section>
+
+
+    <section id="view-mediaos" class="section view hidden">
+      <div class="module-label">MUDA V19 · MASTER MEDIA OPERATING INTELLIGENCE</div>
+      <div class="panel hero-panel">
+        <div class="section-head"><div><h2>Media OS Master Control</h2><p>Seluruh blueprint V19 dipetakan di satu tempat: 15 mesin, 6 layar, maturity L1–L8, data contract, dan batas kebenaran data.</p></div><div class="actions"><button class="secondary" id="mediaosSync">Sinkronkan Data Nyata</button><button class="secondary" id="mediaosRefresh">Refresh Master</button></div></div>
+        <div id="mediaosKpi" class="grid-4"></div>
+        <div class="status">Prinsip inti: V19 tetap additive · Signal → Decision → Risk Gate → Action → Outcome → Learning · AI berisiko tinggi tetap human-in-the-loop.</div>
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <div class="section-head"><div><h2>15 Mesin Perusahaan Media</h2><p>Status tiap kemampuan menunjukkan kondisi nyata, bukan klaim pemasaran.</p></div></div>
+        <div id="mediaosEngines" class="future-grid"></div>
+      </div>
+      <div class="grid-2" style="margin-top:12px">
+        <div class="panel"><div class="section-head"><div><h2>6 Layar Strategis</h2><p>Aliran kerja Owner dari operasi harian sampai intelligence lab.</p></div></div><div id="mediaosScreens" class="list"></div></div>
+        <div class="panel"><div class="section-head"><div><h2>Maturity L1–L8</h2><p>Roadmap kemampuan: monitor → explain → recommend → execute → learn → optimize → coordinate → scale.</p></div></div><div id="mediaosMaturity" class="list"></div></div>
+      </div>
+      <div class="grid-2" style="margin-top:12px">
+        <div class="panel"><div class="section-head"><div><h2>Universal Data Contract</h2><p>Setiap angka/aksi penting harus punya jejak identitas dan korelasi.</p></div></div><div id="mediaosContracts" class="list"></div></div>
+        <div class="panel"><div class="section-head"><div><h2>Truth & Freshness Guard</h2><p>Hal-hal yang tidak boleh dipalsukan atau disimpulkan tanpa sumber.</p></div></div><div id="mediaosTruth" class="list"></div></div>
+      </div>
+      <div class="grid-2" style="margin-top:12px">
+        <div class="panel"><div class="section-head"><div><h2>Audience Intelligence</h2><p>DAU/WAU/MAU, returning, session depth, recirculation dan risiko engagement.</p></div></div><div id="mediaosAudience" class="list"></div></div>
+        <div class="panel"><div class="section-head"><div><h2>Operations & Trust</h2><p>Incident, provenance, copyright, claims, dan status platform.</p></div></div><div id="mediaosOps" class="list"></div></div>
+      </div>
     </section>
 
     <section id="view-governance" class="section view hidden">
@@ -340,7 +416,37 @@ async function logout(){sessionStorage.removeItem(K);sessionStorage.removeItem(U
 function enter(){$('login').classList.add('hidden');$('app').classList.remove('hidden');$('identity').textContent=user?.email||'';refreshAll()}
 if(token)enter();
 $('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')login()});
-$('nav').addEventListener('click',e=>{const b=e.target.closest('button[data-view]');if(!b)return;document.querySelectorAll('#nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.view').forEach(x=>x.classList.add('hidden'));$('view-'+b.dataset.view).classList.remove('hidden');const loaders={command:loadCommands,newsroom:loadContent,intelligence:loadRadar,audience:loadAudience,money:loadMoney,operations:loadOperations,governance:loadGovernance};if(loaders[b.dataset.view])loaders[b.dataset.view]()});
+
+async function loadMediaOS(){
+  const escx=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  try{
+    const [m,a,o,p]=await Promise.all([
+      api('/api/admin/owner/media-os/master'),
+      api('/api/admin/owner/media-os/audience?limit=14'),
+      api('/api/admin/owner/media-os/operations/incidents'),
+      api('/api/admin/owner/media-os/platform')
+    ]);
+    const engines=m.engines||[];
+    const features=engines.reduce((n,x)=>n+(x.features||[]).length,0);
+    const active=engines.flatMap(x=>x.capabilities||[]).filter(x=>['active','enhanced','ready'].includes(x.status)).length;
+    const guarded=engines.flatMap(x=>x.capabilities||[]).filter(x=>['guarded','conditional','foundation'].includes(x.status)).length;
+    $('mediaosKpi').innerHTML=`<div class="metric"><span>Mesin</span><b>${fmt(engines.length)}</b><small>15 blueprint engines</small></div><div class="metric"><span>Kapabilitas</span><b>${fmt(features)}</b><small>cakupan blueprint</small></div><div class="metric"><span>Operational / Enhanced</span><b>${fmt(active)}</b><small>status terverifikasi</small></div><div class="metric"><span>Foundation / Guarded</span><b>${fmt(guarded)}</b><small>belum boleh diklaim active</small></div>`;
+    $('mediaosEngines').innerHTML=engines.map(e=>`<div class="panel"><div class="section-head"><div><h3>${escx(e.name)}</h3><p>${fmt(e.features?.length||0)} kemampuan blueprint</p></div><span class="tag">${escx(e.key)}</span></div><div class="list">${(e.capabilities||[]).map(c=>`<div class="item"><div class="item-row"><div><b>${escx(c.feature_name)}</b><p>${escx(c.evidence||'Belum ada evidence produksi yang terverifikasi.')}</p></div><span class="tag">${escx(c.status)} · L${fmt(c.maturity)}</span></div></div>`).join('')}</div></div>`).join('');
+    $('mediaosScreens').innerHTML=(m.screens||[]).map(s=>`<div class="item"><div class="item-row"><div><b>${escx(s.name)}</b><p>${(s.flow||[]).map(escx).join(' → ')}</p></div><span class="tag">SCREEN</span></div></div>`).join('');
+    $('mediaosMaturity').innerHTML=(m.maturity||[]).map(x=>`<div class="item"><div class="item-row"><div><b>${escx(x.level)} · ${escx(x.name)}</b><p>${escx(x.description)}</p></div><span class="tag">MATURITY</span></div></div>`).join('');
+    $('mediaosContracts').innerHTML=(m.contracts||[]).map(x=>`<div class="item"><b>${escx(x)}</b></div>`).join('');
+    $('mediaosTruth').innerHTML=(m.truth_rules||[]).map(x=>`<div class="item"><b>${escx(x)}</b><p>Wajib memiliki sumber, timestamp, freshness state, dan bukti yang sesuai.</p></div>`).join('');
+    const audience=(a||[]).slice(0,14).reverse();
+    $('mediaosAudience').innerHTML=audience.map(x=>`<div class="item"><div class="item-row"><div><b>${escx(x.metric_date)}</b><p>DAU ${fmt(x.dau)} · WAU ${fmt(x.wau)} · MAU ${fmt(x.mau)} · Returning ${fmt(x.returning_users)}</p></div><span class="tag">Eng ${Math.round(Number(x.engagement_rate||0)*100)}%</span></div></div>`).join('')||'<div class="muted">Belum ada snapshot audience harian.</div>';
+    const incidents=(o||[]).slice(0,8);
+    $('mediaosOps').innerHTML=`<div class="item"><b>Platform</b><p>${(p||[]).map(x=>escx(`${x.brand_key}/${x.site_key} · ${x.locale} · ${x.currency}`)).join('<br>')||'Belum terdaftar'}</p></div>`+incidents.map(x=>`<div class="item"><div class="item-row"><div><b>${escx(x.title)}</b><p>${escx(x.service||'service')} · ${escx(x.provider||'internal')}</p></div><span class="tag">${escx(x.severity)} · ${escx(x.status)}</span></div></div>`).join('');
+  }catch(e){['mediaosKpi','mediaosEngines','mediaosScreens','mediaosMaturity','mediaosContracts','mediaosTruth','mediaosAudience','mediaosOps'].forEach(id=>$(id)&&($(id).innerHTML=`<div class="muted">${escx(e.message)}</div>`));}
+}
+
+$('nav').addEventListener('click',e=>{const b=e.target.closest('button[data-view]');if(!b)return;document.querySelectorAll('#nav button').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.view').forEach(x=>x.classList.add('hidden'));$('view-'+b.dataset.view).classList.remove('hidden');const loaders={command:loadCommands,newsroom:loadContent,intelligence:loadRadar,audience:loadAudience,money:loadMoney,operations:loadOperations,governance:loadGovernance,mediaos:loadMediaOS};if(loaders[b.dataset.view])loaders[b.dataset.view]()});
+async function syncMediaOS(){try{const d=await api('/api/admin/owner/media-os/sync',{method:'POST',body:JSON.stringify({})});toast(`Sinkronisasi selesai: ${fmt(d.summary?.articles)} artikel · ${fmt(d.summary?.videos)} video · ${fmt(d.summary?.analytics_events)} event`);await loadMediaOS();}catch(e){toast(e.message,true)}}
+$('mediaosSync')?.addEventListener('click',syncMediaOS);
+$('mediaosRefresh')?.addEventListener('click',loadMediaOS);
 async function refreshAll(){try{const o=await api('/api/admin/owner/overview');state.overview=o;$('mHealth').textContent=(o.executive.health_score||0)+'%';$('mBreaking').textContent=fmt(o.executive.active_breaking);$('mEvents').textContent=fmt(o.executive.active_events);$('mAlerts').textContent=fmt(o.executive.open_alerts);$('pubArticles').textContent=fmt(o.executive.published_articles);$('views').textContent=fmt(o.executive.total_views);$('shares').textContent=fmt(o.executive.total_shares);$('degraded').textContent=fmt(o.executive.degraded_sources);$('healthPill').textContent=(o.executive.health_score||0)+'% HEALTH';$('healthPill').className='pill '+(o.executive.health_score>=85?'ok':'warn');$('lastSync').textContent='Dashboard diperbarui '+new Date(o.generated_at).toLocaleString('id-ID');renderTasks(o.tasks);renderAlerts(o.alerts);await Promise.allSettled([loadCommands(),loadDecision()]);}catch(e){$('healthPill').textContent='ERROR';$('healthPill').className='pill warn';console.error(e)}}
 function renderTasks(rows){$('tasks').innerHTML=(rows||[]).map(x=>`<div class="item"><div class="item-row"><div><h3>${esc(x.title)}</h3><p>${esc(x.task_type)} · priority ${esc(x.priority)} ${x.due_at?'· '+esc(new Date(x.due_at).toLocaleString('id-ID')):''}</p></div><span class="tag">${esc(x.status)}</span></div><div class="actions"><button class="good" onclick="taskStatus('${x.id}','done')">Selesai</button><button class="secondary" onclick="taskStatus('${x.id}','in_progress')">Kerjakan</button></div></div>`).join('')||'<div class="muted">Tidak ada task terbuka.</div>'}
 function renderAlerts(rows){$('alerts').innerHTML=(rows||[]).map(x=>`<div class="item"><div class="item-row"><div><h3>${esc(x.title)}</h3><p>${esc(x.message||'')} · ${esc(x.source)}</p></div><span class="tag ${x.severity==='critical'?'danger-t':''}">${esc(x.severity)}</span></div><div class="actions"><button class="secondary" onclick="alertStatus('${x.id}','acknowledged')">Acknowledge</button><button class="good" onclick="alertStatus('${x.id}','resolved')">Resolve</button></div></div>`).join('')||'<div class="muted">Tidak ada alert terbuka.</div>'}
@@ -398,5 +504,6 @@ function toast(msg,bad=false){const d=document.createElement('div');d.textConten
 </script>
 <script src="/admin-intelligence.js"></script>
 <script src="/voice-intelligence.js"></script>
-<script src="/owner-cockpit.js" defer></script>
+<script src="/owner-cockpit.js" defer>document.getElementById('mediaosRefresh')?.addEventListener('click',loadMediaOS);
+</script>
 </body></html>
