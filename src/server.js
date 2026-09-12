@@ -10,6 +10,7 @@ import { createClient } from '@supabase/supabase-js';
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
 
 import { syncFeeds } from './sync.js';
 import { supabase, isSupabaseConfigured, supabaseConfigMessage } from './supabase.js';
@@ -5994,6 +5995,71 @@ app.get(
    STATIC FILES
 ========================================================= */
 
+/* =========================================================
+   V19 PUBLIC EXPERIENCE BRIDGE
+   Owner edits become visible on public web without replacing the
+   existing public-site files. Published CMS pages and navigation
+   are injected before static HTML is served.
+========================================================= */
+
+const publicHtmlShell = (title, body, extra='') => `<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${String(title || 'Berita Muda Indonesia').replace(/</g,'&lt;')}</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="muda-public-shell">${body}</div>
+<script src="/site-runtime.js" defer></script>
+${extra}
+</body>
+</html>`;
+
+app.use(async (request,response,next) => {
+  if (request.method !== 'GET') return next();
+  const p = request.path || '/';
+  if (p === '/owner.html' || p === '/admin.html' || p.startsWith('/api/')) return next();
+
+  // Prefer a published Owner-managed page over the legacy static file.
+  if (adminClient && /\.html$/.test(p)) {
+    try {
+      const slug = '/' + p.replace(/^\/+/, '');
+      const { data } = await adminClient
+        .from('owner_site_pages')
+        .select('page_key,title,slug,content_html,content_json,seo_title,seo_description,version,published_at')
+        .eq('slug', slug)
+        .eq('status', 'published')
+        .maybeSingle();
+      if (data) {
+        const body = data.content_html || (data.content_json ? `<pre>${JSON.stringify(data.content_json,null,2).replace(/</g,'&lt;')}</pre>` : '');
+        return response.type('html').send(publicHtmlShell(data.seo_title || data.title, `<main class="muda-managed-page"><div class="muda-page-kicker">BERITA MUDA INDONESIA</div><h1>${String(data.title||'').replace(/</g,'&lt;')}</h1><div class="muda-page-content">${body}</div></main>`));
+      }
+    } catch (err) {
+      console.warn('Published CMS page bridge failed:', err?.message || err);
+    }
+  }
+
+  // Inject the public bridge into legacy HTML so navigation/widgets stay editable
+  // from Owner without forcing a rebuild of every public page.
+  if (/\.html$/.test(p) || p === '/') {
+    const file = p === '/' ? path.join(publicDir, 'index.html') : path.join(publicDir, p.replace(/^\/+/, ''));
+    try {
+      if (fs.existsSync(file)) {
+        let html = fs.readFileSync(file, 'utf8');
+        if (!html.includes('/site-runtime.js')) {
+          html = html.replace(/<\/body>/i, '<script src="/site-runtime.js" defer></script></body>');
+        }
+        return response.type('html').send(html);
+      }
+    } catch (err) {
+      console.warn('Public HTML bridge failed:', err?.message || err);
+    }
+  }
+  return next();
+});
+
 app.use(
   express.static(
     publicDir,
@@ -8253,6 +8319,33 @@ app.get('/api/admin/owner/business/weather', admin, async (req,res)=>{try{const 
 
 app.get('/api/site/navigation', async (_req,res)=>{try{const {data,error}=await adminClient.from('owner_site_navigation').select('nav_key,location,label,href,item_type,parent_key,sort_order,visible,start_at,end_at,metadata').eq('visible',true).order('sort_order');if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}});
 app.get('/api/site/pages/:slug', async (req,res)=>{try{const slug='/' + String(req.params.slug||'').replace(/^\/+/, '');const {data,error}=await adminClient.from('owner_site_pages').select('page_key,title,slug,content_html,content_json,seo_title,seo_description,version,published_at').eq('slug',slug).eq('status','published').maybeSingle();if(error)throw error;if(!data)return res.status(404).json({error:'Page tidak ditemukan'});res.json(data);}catch(error){res.status(500).json({error:error.message});}});
+
+// Public, read-only experience feeds used by the website runtime.
+app.get('/api/site/campaigns/active', async (_req,res)=>{
+  try{
+    const now=new Date().toISOString();
+    const {data,error}=await adminClient.from('owner_interactive_campaigns').select('campaign_key,campaign_type,title,description,intro,config,reward_config,status,starts_at,ends_at,results_visibility').eq('status','active').or(`starts_at.is.null,starts_at.lte.${now}`).or(`ends_at.is.null,ends_at.gte.${now}`).order('starts_at',{ascending:true,nullsFirst:true}).limit(12);
+    if(error) throw error; res.json(data||[]);
+  }catch(error){res.status(500).json({error:error.message});}
+});
+
+app.get('/api/site/ad-rates', async (_req,res)=>{
+  try{
+    const {data,error}=await adminClient.from('owner_ad_pricing_rules').select('pricing_key,placement,channel,region,approved_rate,currency,status,effective_from,effective_to').eq('status','active').order('placement');
+    if(error) throw error; res.json(data||[]);
+  }catch(error){res.status(500).json({error:error.message});}
+});
+
+app.get('/api/site/weather-public', async (req,res)=>{
+  try{const lat=Number(req.query.lat),lon=Number(req.query.lon);if(!Number.isFinite(lat)||!Number.isFinite(lon))return res.status(400).json({error:'lat/lon wajib'});const r=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&current=temperature_2m,wind_speed_10m&timezone=auto`);const d=await r.json();if(!r.ok)throw new Error(d?.reason||'Weather provider gagal');res.json(d);}catch(error){res.status(502).json({error:error.message});}
+});
+
+app.get('/api/site/experience/widgets', async (_req,res)=>{
+  try{
+    const {data,error}=await adminClient.from('owner_experience_widgets').select('widget_key,widget_type,title,provider,config,sort_order').eq('active',true).order('sort_order');
+    if(error) throw error; res.json(data||[]);
+  }catch(error){res.status(500).json({error:error.message});}
+});
 
 /* =========================================================
    404 HANDLER
