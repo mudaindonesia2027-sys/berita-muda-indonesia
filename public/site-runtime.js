@@ -1,65 +1,16 @@
 (() => {
   'use strict';
-  const path = location.pathname;
   const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  const get = async (u) => { const r = await fetch(u, {headers:{Accept:'application/json'}}); const d = await r.json(); if(!r.ok) throw new Error(d?.error||`HTTP ${r.status}`); return d; };
-
+  const get = async u => { const r = await fetch(u, {headers:{Accept:'application/json'}}); const d = await r.json().catch(()=>({})); if(!r.ok) throw new Error(d?.error || `HTTP ${r.status}`); return d; };
+  const path = location.pathname;
   async function renderNavigation(){
-    try{
-      const rows = await get('/api/site/navigation');
-      const active = rows.filter(x => x.visible !== false && (!x.start_at || new Date(x.start_at) <= new Date()) && (!x.end_at || new Date(x.end_at) >= new Date()));
-      const html = active.map(x => `<a href="${esc(x.href||'#')}" data-muda-nav="1">${esc(x.label)}</a>`).join('');
-      document.querySelectorAll('nav').forEach(nav => {
-        if(nav.closest('#ownerApp,#login,.owner-os')) return;
-        if(nav.dataset.mudaManaged === '1' || /site-header|main-nav|navigation|topnav/i.test(nav.className||nav.id||'')){
-          nav.dataset.mudaManaged='1'; nav.innerHTML=html;
-        }
-      });
-    }catch(e){}
+    try{const rows=await get('/api/site/navigation');const active=rows.filter(x=>x.visible!==false&&(!x.start_at||new Date(x.start_at)<=new Date())&&(!x.end_at||new Date(x.end_at)>=new Date()));const nav=document.querySelector('#categoryNav .nav-inner');if(!nav||!active.length)return;nav.innerHTML=active.map(x=>`<button class="nav-item${x.href==='/'?' active':''}" data-muda-nav="1" data-muda-href="${esc(x.href||'#')}">${esc(x.label)}</button>`).join('');nav.querySelectorAll('[data-muda-nav]').forEach(b=>b.addEventListener('click',()=>location.href=b.dataset.mudaHref||'#'));}catch{}
   }
-
-  async function renderManagedPage(){
-    const slug = path === '/' ? '' : path;
-    if(!slug.endsWith('.html')) return;
-    const key = slug.replace(/^\//,'');
-    try{
-      const d = await get('/api/site/pages/'+encodeURIComponent(key));
-      const main = document.querySelector('main');
-      if(!main || !d) return;
-      main.innerHTML = `<section class="muda-managed-live"><div class="eyebrow">BERITA MUDA INDONESIA · LIVE CMS</div><h1>${esc(d.title)}</h1><div class="muda-managed-content">${d.content_html || ''}</div></section>`;
-      document.title = d.seo_title || `${d.title} | Berita Muda Indonesia`;
-      const meta = document.querySelector('meta[name="description"]');
-      if(meta && d.seo_description) meta.setAttribute('content', d.seo_description);
-    }catch(e){}
-  }
-
   async function renderExperience(){
-    try{
-      const widgets = await get('/api/site/experience/widgets');
-      const campaigns = await get('/api/site/campaigns/active');
-      if(!widgets.length && !campaigns.length) return;
-      let dock = document.getElementById('mudaExperienceDock');
-      if(!dock){ dock=document.createElement('section'); dock.id='mudaExperienceDock'; dock.innerHTML='<div class="muda-exp-head"><strong>MUDA LIVE</strong><span>Pengalaman interaktif</span></div><div id="mudaExpBody"></div>'; const main=document.querySelector('main.container')||document.querySelector('main'); if(main) main.appendChild(dock); else document.body.appendChild(dock); }
-      const body=dock.querySelector('#mudaExpBody');
-      const cards=[];
-      for(const w of widgets){
-        if(w.widget_type==='weather'){
-          const c=w.config||{}; const r=await get(`/api/site/weather-public?lat=${encodeURIComponent(c.lat||-6.9)}&lon=${encodeURIComponent(c.lon||110.4)}`).catch(()=>null);
-          const cur=r?.current||r?.current_weather; if(cur) cards.push(`<div class="muda-exp-card"><span>CUACA · ${esc(c.location||w.title)}</span><b>${Math.round(cur.temperature_2m??cur.temperature)}°</b><small>Wind ${Math.round(cur.wind_speed_10m??cur.windspeed??0)} km/h</small></div>`);
-        } else if(w.widget_type==='regional_map') {
-          cards.push(`<div class="muda-exp-card"><span>${esc(w.title)}</span><b>Jawa Tengah</b><small>Peta regional aktif · ${esc(w.provider||'map')}</small></div>`);
-        } else if(w.widget_type==='holiday_calendar') {
-          cards.push(`<div class="muda-exp-card"><span>${esc(w.title)}</span><b>Kalender Editorial</b><small>Hari penting & momentum konten</small></div>`);
-        }
-      }
-      campaigns.slice(0,2).forEach(c=>cards.push(`<div class="muda-exp-card campaign"><span>${esc(c.campaign_type)} · AKTIF</span><b>${esc(c.title)}</b><small>${esc(c.description||'Ikuti interaksi MUDA')}</small></div>`));
-      body.innerHTML=cards.join('');
-    }catch(e){}
+    try{const [widgets,campaigns]=await Promise.all([get('/api/site/experience/widgets'),get('/api/site/campaigns/active')]);const page=document.querySelector('main.page');if(!page)return;let row=document.getElementById('mudaContextRow');if(!row){row=document.createElement('section');row.id='mudaContextRow';row.className='muda-context-row';const target=document.querySelector('.content-layout')||page;target.parentNode.insertBefore(row,target);}const cards=[];for(const w of widgets){const c=w.config||{};if(w.widget_type==='weather'){const r=await get(`/api/site/weather-public?lat=${encodeURIComponent(c.lat||-6.9667)}&lon=${encodeURIComponent(c.lon||110.4167)}`).catch(()=>null);const cur=r?.current||{};cards.push(`<article class="muda-context-card"><span class="eyebrow">CUACA</span><h3>${esc(c.location||w.title||'Wilayah utama')}</h3><p><strong>${cur.temperature_2m??'—'}°</strong> · angin ${cur.wind_speed_10m??'—'} km/jam</p></article>`);}else if(w.widget_type==='regional_map'){const center=c.center||[-7.3,110.4];cards.push(`<article class="muda-context-card"><span class="eyebrow">WILAYAH</span><h3>${esc(w.title||'Peta Jawa Tengah')}</h3><p>Pusat ${center[0]}, ${center[1]} · peta regional tersedia</p></article>`);}else if(w.widget_type==='holiday_calendar'){cards.push(`<article class="muda-context-card"><span class="eyebrow">KALENDER</span><h3>${esc(w.title||'Hari Penting')}</h3><p>${new Date().toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</p></article>`);}}row.innerHTML=cards.join('');document.getElementById('mudaCampaignStrip')?.remove();if(campaigns.length){const c=campaigns[0],holder=document.createElement('section');holder.id='mudaCampaignStrip';holder.className='muda-campaign-strip';holder.innerHTML=`<div><div class="eyebrow">${esc(c.campaign_type||'CAMPAIGN')} · AKTIF</div><h2>${esc(c.title)}</h2><p>${esc(c.description||c.intro||'Ikuti pengalaman interaktif MUDA Indonesia.')}</p></div><button class="cta" type="button">Ikut Sekarang →</button>`;const target=document.querySelector('.content-layout');if(target)target.parentNode.insertBefore(holder,target);holder.querySelector('.cta')?.addEventListener('click',()=>{const href=c.config?.href||'';if(href)location.href=href;else alert('Campaign aktif: '+c.title);});}}
+    catch{}
   }
-
-  function injectStyles(){
-    if(document.getElementById('mudaPublicRuntimeStyles')) return;
-    const s=document.createElement('style'); s.id='mudaPublicRuntimeStyles'; s.textContent=`#mudaExperienceDock{position:fixed;right:18px;bottom:18px;z-index:9999;width:min(390px,calc(100vw - 36px));padding:12px;border:1px solid rgba(87,173,225,.25);border-radius:18px;background:rgba(7,16,27,.94);backdrop-filter:blur(18px);box-shadow:0 18px 55px rgba(0,0,0,.26);color:#eef7ff;font-family:inherit}.muda-exp-head{display:flex;justify-content:space-between;gap:10px;font-size:12px;margin-bottom:8px}.muda-exp-head span{color:#8fa6bd;font-size:10px}.muda-exp-card{display:grid;grid-template-columns:1fr auto;gap:4px;padding:9px 10px;margin-top:7px;border:1px solid rgba(99,146,188,.16);border-radius:12px;background:rgba(12,27,43,.82)}.muda-exp-card span,.muda-exp-card small{grid-column:1/-1;color:#89a1b7;font-size:9px}.muda-exp-card b{font-size:14px}.muda-managed-live{max-width:980px;margin:50px auto;padding:30px;border-radius:24px;background:#0a1522;border:1px solid rgba(97,165,218,.15)}.muda-managed-live .eyebrow{font-size:10px;letter-spacing:.14em;color:#6fd6ff;font-weight:900}.muda-managed-live h1{font-size:38px;margin:10px 0 18px}.muda-managed-content{color:#b9c9d9;line-height:1.8}.muda-managed-content img{max-width:100%;border-radius:14px}`; document.head.appendChild(s);
-  }
-  injectStyles(); renderNavigation(); renderManagedPage(); renderExperience();
+  async function renderManagedPage(){if(path==='/'||!path.endsWith('.html')||path==='/owner.html'||path==='/admin.html')return;const key=path.replace(/^\//,'');try{const d=await get('/api/site/pages/'+encodeURIComponent(key));const main=document.querySelector('main');if(!main)return;main.innerHTML=`<section class="muda-managed-live"><div class="eyebrow">BERITA MUDA INDONESIA · LIVE CMS</div><h1>${esc(d.title)}</h1><div class="muda-managed-content">${d.content_html||''}</div></section>`;document.title=d.seo_title||`${d.title} | Berita Muda Indonesia`;const meta=document.querySelector('meta[name="description"]');if(meta&&d.seo_description)meta.content=d.seo_description;}catch{}}
+  function injectStyles(){if(document.getElementById('mudaRuntimeStyles'))return;const s=document.createElement('style');s.id='mudaRuntimeStyles';s.textContent='.muda-managed-live{max-width:960px;margin:44px auto;padding:32px;border-radius:22px;background:#fff;border:1px solid rgba(8,30,50,.1);box-shadow:0 20px 65px rgba(5,20,35,.1)}.muda-managed-live h1{font-size:42px;line-height:1.06;margin:9px 0 18px}.muda-managed-content{color:#4f6173;line-height:1.8}.muda-managed-content img{max-width:100%;border-radius:16px}@media(max-width:720px){.muda-managed-live{margin:24px 0;padding:22px}.muda-managed-live h1{font-size:32px}}';document.head.appendChild(s)}
+  injectStyles();renderNavigation();renderExperience();renderManagedPage();
 })();
