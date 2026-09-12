@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { createHash } from 'node:crypto';
 
 import express from 'express';
 import cors from 'cors';
@@ -7653,6 +7654,493 @@ app.get('/api/admin/owner/finance/report.csv', admin, async (request,response)=>
 app.get('/api/admin/owner/media/cockpit', admin, async (_request,response)=>{try{response.json(await v19MediaIntelligence());}catch(error){response.status(500).json({error:error.message});}});
 
 app.post('/api/admin/owner/media/snapshot', admin, ownerWrite, async (request,response)=>{try{const m=await v19MediaIntelligence();const row={articles_total:m.articleStats.total,articles_published:m.articleStats.published,videos_total:m.videoStats.total,videos_published:m.videoStats.published,live_events:m.events.length,breaking_active:m.breaking.length,top_story_id:m.topStory?.id||null,article_views:m.articleStats.views||0,video_views:m.videos.reduce((a,x)=>a+Number(x.views||0),0),engagement_rate:m.articleStats.views?(((m.articleStats.likes+m.articleStats.shares)/m.articleStats.views)*100):0,notes:'Owner media snapshot',created_by:request.user.id};const {data,error}=await adminClient.from('owner_media_snapshots').insert(row).select().single();if(error)throw error;await auditOwnerAction(request,'owner_media_snapshot','owner_media_snapshot',data.id,row);response.status(201).json(data);}catch(error){response.status(400).json({error:error.message});}});
+
+
+/* =========================================================
+   V19 LIVE MONITOR + OWNER INBOX
+   Additive runtime layer — keeps V19 version unchanged.
+========================================================= */
+app.post('/api/contact/inquiry', interactionLimiter, async (request,response)=>{
+  try {
+    const body=request.body||{};
+    const inquiryType=['general','iklan','sponsor','kerja_sama','koreksi','hak_cipta','lainnya'].includes(body.inquiry_type)?body.inquiry_type:'general';
+    const name=cleanText(body.name,120);
+    const email=cleanText(body.email,254).toLowerCase();
+    const message=cleanText(body.message,5000);
+    if(!name || !email || !message || !/^\S+@\S+\.\S+$/.test(email)) return response.status(400).json({error:'Nama, email, dan pesan wajib diisi.'});
+    const row={inquiry_type:inquiryType,name,email,phone:cleanText(body.phone,40)||null,company:cleanText(body.company,180)||null,subject:cleanText(body.subject,240)||null,message,budget:Number(body.budget)||null,currency:cleanText(body.currency,8).toUpperCase()||'IDR',source_path:cleanText(body.source_path,500)||request.path,metadata:{user_agent:request.get('user-agent')||null,topic:cleanText(body.topic,80)||null}};
+    const {data,error}=await adminClient.from('contact_inquiries').insert(row).select('id,inquiry_type,name,email,company,subject,message,budget,currency,status,created_at').single();
+    if(error) throw error;
+    await adminClient.from('owner_alerts').insert({severity:inquiryType==='iklan'||inquiryType==='sponsor'?'high':'info',title:inquiryType==='iklan'?'Lead iklan baru':inquiryType==='sponsor'?'Kontak sponsor baru':'Pesan kontak baru',message:`${name} · ${subject||inquiryType} · ${message.slice(0,220)}`,status:'open',source:'public_contact',resource_type:'contact_inquiry',resource_id:data.id,action_key:'review_contact_inquiry',metadata:{inquiry_type:inquiryType,email,company:row.company}});
+    response.status(201).json({ok:true,message:'Pesan sudah diterima. Terima kasih.',id:data.id});
+  } catch(error){response.status(400).json({error:error.message});}
+});
+
+app.get('/api/admin/owner/inbox', admin, async (request,response)=>{
+  try{
+    const since=cleanText(request.query.since,50);
+    const q=adminClient.from('contact_inquiries').select('id,inquiry_type,name,email,phone,company,subject,message,budget,currency,status,created_at,updated_at').neq('status','closed').neq('status','spam').order('created_at',{ascending:false}).limit(60);
+    if(since) q.gt('created_at',since);
+    const {data,error}=await q; if(error) throw error;
+    response.json(data||[]);
+  }catch(error){response.status(500).json({error:error.message});}
+});
+
+app.patch('/api/admin/owner/inbox/:id', admin, ownerWrite, async (request,response)=>{
+  try{
+    const status=['new','read','in_progress','replied','closed','spam'].includes(request.body?.status)?request.body.status:'read';
+    const {data,error}=await adminClient.from('contact_inquiries').update({status,updated_at:new Date().toISOString()}).eq('id',request.params.id).select().single();
+    if(error) throw error;
+    await auditOwnerAction(request,'contact_inquiry_status_changed','contact_inquiry',data.id,{status});
+    response.json(data);
+  }catch(error){response.status(400).json({error:error.message});}
+});
+
+app.get('/api/admin/owner/live-monitor', admin, async (request,response)=>{
+  try{
+    const days=Math.min(Math.max(Number(request.query.days)||14,7),31);
+    const start=new Date(Date.now()-(days-1)*86400000); start.setHours(0,0,0,0);
+    const startIso=start.toISOString();
+    const [events,revenue,articles,videos,ads,inbox] = await Promise.all([
+      v19MoneySafe(()=>adminClient.from('analytics_events').select('event_type,created_at,content_type,content_id').gte('created_at',startIso).order('created_at',{ascending:true}).limit(30000)),
+      v19MoneySafe(()=>adminClient.from('revenue_entries').select('amount,source,occurred_at,currency').gte('occurred_at',startIso).order('occurred_at',{ascending:true}).limit(10000)),
+      v19MoneySafe(()=>adminClient.from('articles').select('id,status,views,likes,shares,created_at,published_at').order('created_at',{ascending:true}).limit(1000)),
+      v19MoneySafe(()=>adminClient.from('videos').select('id,status,views,likes,shares,created_at').order('created_at',{ascending:true}).limit(1000)),
+      v19MoneySafe(()=>adminClient.from('ad_campaigns').select('id,title,advertiser_name,active,impressions,clicks,budget,spend,created_at,updated_at').order('updated_at',{ascending:false}).limit(100)),
+      v19MoneySafe(()=>adminClient.from('contact_inquiries').select('id,inquiry_type,name,email,company,subject,message,budget,currency,status,created_at').neq('status','closed').neq('status','spam').order('created_at',{ascending:false}).limit(30))
+    ]);
+    const labels=[]; for(let i=0;i<days;i++){const d=new Date(start);d.setDate(start.getDate()+i);labels.push(d.toISOString().slice(0,10));}
+    const blank=()=>Object.fromEntries(labels.map(d=>[d,0]));
+    const views=blank(), videoViews=blank(), allActivity=blank(), adClicks=blank(), revenueByDay=blank();
+    for(const e of (events.data||[])){const d=String(e.created_at||'').slice(0,10);if(!(d in allActivity))continue;const t=String(e.event_type||'').toLowerCase();allActivity[d]++;if(t.includes('video')||String(e.content_type||'')==='video')videoViews[d]++;if(t.includes('view'))views[d]++;if(t.includes('ad_click'))adClicks[d]++;}
+    for(const r of (revenue.data||[])){const d=String(r.occurred_at||'').slice(0,10);if(d in revenueByDay) revenueByDay[d]+=Number(r.amount||0);}
+    const adRows=ads.data||[]; const adSummary={campaigns:adRows.length,active:adRows.filter(x=>x.active!==false).length,impressions:adRows.reduce((a,x)=>a+Number(x.impressions||0),0),clicks:adRows.reduce((a,x)=>a+Number(x.clicks||0),0),budget:adRows.reduce((a,x)=>a+Number(x.budget||0),0),spend:adRows.reduce((a,x)=>a+Number(x.spend||0),0)};
+    response.json({days:labels,activity:labels.map(d=>allActivity[d]),views:labels.map(d=>views[d]),videoViews:labels.map(d=>videoViews[d]),adClicks:labels.map(d=>adClicks[d]),revenue:labels.map(d=>revenueByDay[d]),adSummary,openMessages:inbox.data||[],generated_at:new Date().toISOString()});
+  }catch(error){response.status(500).json({error:error.message});}
+});
+
+
+
+/* =========================================================
+   V19 COMMERCIAL & BILLING OS
+   Lead → Proposal → Approval → Ad Order → Invoice → Payment → Receipt
+   Printable business documents; tax-document status remains explicit.
+========================================================= */
+const commercialDocTypeLabel = { quotation:'Penawaran Iklan', order_confirmation:'Konfirmasi Pesanan Iklan', invoice:'Invoice', receipt:'Kwitansi', contract:'Perjanjian Iklan' };
+const commercialStatuses = ['draft','proposed','approved','contracted','invoiced','partially_paid','paid','cancelled'];
+const commercialDocStatuses = ['draft','issued','void'];
+const makeCommercialNumber = (prefix, id) => `${prefix}-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${String(id||'').replace(/-/g,'').slice(0,8).toUpperCase()}`;
+const commercialSafe = v => cleanText(v, 5000);
+
+app.get('/api/admin/owner/commercial/deals', admin, async (request,response)=>{
+  try{
+    const status=cleanText(request.query.status,40);
+    let q=adminClient.from('owner_ad_deals').select('*').order('created_at',{ascending:false}).limit(200);
+    if(status && commercialStatuses.includes(status)) q=q.eq('status',status);
+    const {data,error}=await q; if(error) throw error;
+    response.json(data||[]);
+  }catch(error){response.status(500).json({error:error.message});}
+});
+
+app.post('/api/admin/owner/commercial/deals', admin, ownerWrite, async (request,response)=>{
+  try{
+    const b=request.body||{};
+    const row={company:commercialSafe(b.company),contact_name:commercialSafe(b.contact_name)||null,contact_email:commercialSafe(b.contact_email)||null,contact_phone:commercialSafe(b.contact_phone)||null,campaign_title:commercialSafe(b.campaign_title),placement:commercialSafe(b.placement)||'website',start_date:b.start_date||null,end_date:b.end_date||null,amount:Math.max(Number(b.amount)||0,0),currency:commercialSafe(b.currency,8).toUpperCase()||'IDR',tax_mode:['none','withholding','ppn_external'].includes(b.tax_mode)?b.tax_mode:'none',status:['draft','proposed'].includes(b.status)?b.status:'draft',notes:commercialSafe(b.notes)||null,terms:b.terms&&typeof b.terms==='object'?b.terms:{},metadata:b.metadata&&typeof b.metadata==='object'?b.metadata:{}};
+    if(!row.company||!row.campaign_title) return response.status(400).json({error:'Perusahaan dan judul kampanye wajib diisi.'});
+    const seed=`${Date.now()}-${Math.random()}`;
+    row.deal_number=`AD-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${createHash('sha256').update(seed).digest('hex').slice(0,8).toUpperCase()}`;
+    const {data,error}=await adminClient.from('owner_ad_deals').insert(row).select().single(); if(error) throw error;
+    await adminClient.from('owner_commercial_audit').insert({deal_id:data.id,event_key:'deal_created',actor_id:request.user.id,payload:{status:data.status,amount:data.amount,currency:data.currency}});
+    await auditOwnerAction(request,'commercial_deal_created','owner_ad_deal',data.id,{deal_number:data.deal_number,amount:data.amount});
+    response.status(201).json(data);
+  }catch(error){response.status(400).json({error:error.message});}
+});
+
+app.patch('/api/admin/owner/commercial/deals/:id', admin, ownerWrite, async (request,response)=>{
+  try{
+    const b=request.body||{}; const patch={updated_at:new Date().toISOString()};
+    for(const k of ['company','contact_name','contact_email','contact_phone','campaign_title','placement','notes']) if(b[k]!==undefined) patch[k]=commercialSafe(b[k])||null;
+    for(const k of ['start_date','end_date']) if(b[k]!==undefined) patch[k]=b[k]||null;
+    if(b.amount!==undefined) patch.amount=Math.max(Number(b.amount)||0,0);
+    if(b.currency!==undefined) patch.currency=commercialSafe(b.currency,8).toUpperCase()||'IDR';
+    if(b.tax_mode!==undefined && ['none','withholding','ppn_external'].includes(b.tax_mode)) patch.tax_mode=b.tax_mode;
+    if(b.status!==undefined && commercialStatuses.includes(b.status)) patch.status=b.status;
+    if(b.terms!==undefined) patch.terms=b.terms&&typeof b.terms==='object'?b.terms:{};
+    if(patch.status==='approved'){patch.approved_at=new Date().toISOString();patch.approved_by=request.user.id;}
+    const {data,error}=await adminClient.from('owner_ad_deals').update(patch).eq('id',request.params.id).select().single(); if(error) throw error;
+    await adminClient.from('owner_commercial_audit').insert({deal_id:data.id,event_key:'deal_updated',actor_id:request.user.id,payload:patch});
+    response.json(data);
+  }catch(error){response.status(400).json({error:error.message});}
+});
+
+app.post('/api/admin/owner/commercial/deals/:id/documents', admin, ownerWrite, async (request,response)=>{
+  try{
+    const dealQ=await adminClient.from('owner_ad_deals').select('*').eq('id',request.params.id).single(); if(dealQ.error) throw dealQ.error;
+    const deal=dealQ.data; const docType=commercialDocStatuses.includes(request.body?.status)?(request.body?.doc_type||'quotation'):(request.body?.doc_type||'quotation');
+    if(!Object.keys(commercialDocTypeLabel).includes(docType)) return response.status(400).json({error:'Jenis dokumen tidak valid.'});
+    const prefix={quotation:'QUO',order_confirmation:'IO',invoice:'INV',receipt:'KWT',contract:'AGR'}[docType];
+    const docId= createHash('sha256').update(`${deal.id}-${docType}-${Date.now()}-${Math.random()}`).digest('hex').slice(0,8).toUpperCase();
+    const docNumber=makeCommercialNumber(prefix,docId);
+    const issued=new Date(); const due=request.body?.due_at?new Date(request.body.due_at):new Date(Date.now()+7*86400000);
+    const content={
+      issuer:{name:'Berita Muda Indonesia',site:process.env.PUBLIC_BASE_URL||'Berita Muda Indonesia'},
+      customer:{company:deal.company,name:deal.contact_name,email:deal.contact_email,phone:deal.contact_phone},
+      deal:{deal_number:deal.deal_number,campaign_title:deal.campaign_title,placement:deal.placement,start_date:deal.start_date,end_date:deal.end_date,amount:deal.amount,currency:deal.currency,tax_mode:deal.tax_mode,notes:deal.notes},
+      terms:deal.terms||{},
+      disclaimer: docType==='invoice' ? 'Dokumen invoice komersial. Bukan pengganti e-Faktur Pajak resmi DJP.' : ''
+    };
+    const escH=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+    const html=`<!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escH(commercialDocTypeLabel[docType])} ${escH(docNumber)}</title><style>body{font-family:Arial,sans-serif;color:#152235;background:#fff;margin:0;padding:28px}main{max-width:820px;margin:auto}header{display:flex;justify-content:space-between;border-bottom:2px solid #152235;padding-bottom:18px}h1{font-size:24px;margin:0 0 6px}.muted{color:#667085;font-size:12px}.box{border:1px solid #d8dee8;border-radius:10px;padding:14px;margin:16px 0}table{width:100%;border-collapse:collapse}th,td{padding:9px;border-bottom:1px solid #e7ebf0;text-align:left;font-size:13px}.total{font-size:20px;font-weight:800;text-align:right}.notice{background:#fff7df;border:1px solid #ecd38b;padding:12px;border-radius:8px;font-size:12px}@media print{body{padding:0}.noprint{display:none}}</style></head><body><main><header><div><h1>BERITA MUDA INDONESIA</h1><div class="muted">${escH(commercialDocTypeLabel[docType])}</div></div><div style="text-align:right"><b>${escH(docNumber)}</b><div class="muted">Tanggal ${issued.toLocaleDateString('id-ID')}</div></div></header><div class="box"><b>Kepada</b><p>${escH(deal.company)}<br>${escH(deal.contact_name||'')}<br>${escH(deal.contact_email||'')}</p></div><div class="box"><table><tr><th>Kampanye</th><td>${escH(deal.campaign_title)}</td></tr><tr><th>Penempatan</th><td>${escH(deal.placement)}</td></tr><tr><th>Periode</th><td>${escH(deal.start_date||'-')} s/d ${escH(deal.end_date||'-')}</td></tr><tr><th>Nilai</th><td>${escH(deal.currency)} ${new Intl.NumberFormat('id-ID').format(Number(deal.amount||0))}</td></tr><tr><th>Jatuh tempo</th><td>${due.toLocaleDateString('id-ID')}</td></tr></table><p class="total">TOTAL: ${escH(deal.currency)} ${new Intl.NumberFormat('id-ID').format(Number(deal.amount||0))}</p></div>${content.disclaimer?`<div class="notice">${escH(content.disclaimer)}</div>`:''}<div class="box"><b>Catatan & Ketentuan</b><p>${escH(deal.notes||'Sesuai kesepakatan antara para pihak.')}</p></div><div class="noprint" style="margin-top:24px"><button onclick="window.print()">Cetak / Simpan PDF</button></div></main></body></html>`;
+    const hash=createHash('sha256').update(html).digest('hex');
+    const {data,error}=await adminClient.from('owner_commercial_documents').insert({deal_id:deal.id,doc_type:docType,doc_number:docNumber,status:'issued',issued_at:issued.toISOString(),due_at:due.toISOString(),amount:deal.amount,currency:deal.currency,tax_note:content.disclaimer||null,content,html_snapshot:html,document_hash:hash,created_by:request.user.id}).select().single(); if(error) throw error;
+    await adminClient.from('owner_commercial_audit').insert({deal_id:deal.id,document_id:data.id,event_key:'document_issued',actor_id:request.user.id,payload:{doc_type:docType,doc_number:docNumber,hash}});
+    if(['invoice'].includes(docType) && deal.status==='approved') await adminClient.from('owner_ad_deals').update({status:'invoiced',updated_at:new Date().toISOString()}).eq('id',deal.id);
+    response.status(201).json(data);
+  }catch(error){response.status(400).json({error:error.message});}
+});
+
+app.get('/api/admin/owner/commercial/documents/:id/print', admin, async (request,response)=>{
+  try{const {data,error}=await adminClient.from('owner_commercial_documents').select('html_snapshot,doc_number,status').eq('id',request.params.id).single();if(error)throw error;if(!data?.html_snapshot)return response.status(404).send('Dokumen tidak tersedia');response.setHeader('Content-Type','text/html; charset=utf-8');response.setHeader('Content-Disposition',`inline; filename="${data.doc_number}.html"`);response.send(data.html_snapshot);}catch(error){response.status(404).send('Dokumen tidak ditemukan');}
+});
+
+app.get('/api/admin/owner/commercial/documents', admin, async (request,response)=>{
+  try{const q=adminClient.from('owner_commercial_documents').select('id,deal_id,doc_type,doc_number,status,issued_at,due_at,amount,currency,document_hash,created_at').order('created_at',{ascending:false}).limit(200);const {data,error}=await q;if(error)throw error;response.json(data||[]);}catch(error){response.status(500).json({error:error.message});}
+});
+
+app.post('/api/admin/owner/commercial/payments', admin, ownerWrite, async (request,response)=>{
+  try{
+    const b=request.body||{}; const amount=Number(b.amount)||0; if(amount<=0) return response.status(400).json({error:'Nominal pembayaran harus lebih dari 0.'});
+    const dealQ=await adminClient.from('owner_ad_deals').select('*').eq('id',b.deal_id).single(); if(dealQ.error)throw dealQ.error; const deal=dealQ.data;
+    const {data,error}=await adminClient.from('owner_commercial_payments').insert({deal_id:deal.id,document_id:b.document_id||null,payment_reference:commercialSafe(b.payment_reference,120)||null,amount,currency:commercialSafe(b.currency,8).toUpperCase()||deal.currency,paid_at:b.paid_at||new Date().toISOString(),method:commercialSafe(b.method,50)||'bank_transfer',notes:commercialSafe(b.notes)||null,created_by:request.user.id}).select().single();if(error)throw error;
+    const totalQ=await adminClient.from('owner_commercial_payments').select('amount').eq('deal_id',deal.id);const totalPaid=(totalQ.data||[]).reduce((a,x)=>a+Number(x.amount||0),0);
+    const newStatus=totalPaid>=Number(deal.amount||0)?'paid':'partially_paid'; await adminClient.from('owner_ad_deals').update({status:newStatus,updated_at:new Date().toISOString()}).eq('id',deal.id);
+    await adminClient.from('revenue_entries').insert({source:'direct_ad',amount,currency:deal.currency,occurred_at:b.paid_at||new Date().toISOString(),campaign_id:null,notes:`Pembayaran iklan ${deal.deal_number}`});
+    await adminClient.from('owner_commercial_audit').insert({deal_id:deal.id,event_key:'payment_recorded',actor_id:request.user.id,payload:{amount,total_paid:totalPaid,status:newStatus}});
+    response.status(201).json({payment:data,total_paid:totalPaid,status:newStatus});
+  }catch(error){response.status(400).json({error:error.message});}
+});
+
+
+/* =========================================================
+   V19 FUTURE MEDIA INTELLIGENCE — REGIONAL + STUDIO + SCALE
+========================================================= */
+const regionCatalog = {
+  'Jawa Tengah':['Banyumas','Banjarnegara','Batang','Blora','Boyolali','Brebes','Cilacap','Demak','Grobogan','Jepara','Karanganyar','Kebumen','Kendal','Klaten','Kudus','Magelang','Pati','Pekalongan','Pemalang','Purbalingga','Purworejo','Rembang','Semarang','Sragen','Sukoharjo','Tegal','Temanggung','Wonogiri','Wonosobo','Kota Magelang','Kota Pekalongan','Kota Salatiga','Kota Semarang','Kota Surakarta','Kota Tegal']
+};
+app.get('/api/admin/owner/regions/catalog', admin, async (_req,res)=>res.json(regionCatalog));
+app.get('/api/admin/owner/regions/overview', admin, async (req,res)=>{
+  try{
+    const province=cleanText(req.query.province,100)||null;
+    const regency=cleanText(req.query.regency,100)||null;
+    const mappingQ=adminClient.from('owner_content_regions').select('content_type,content_id,province,regency,district,city,confidence,source').limit(5000);
+    if(province) mappingQ.eq('province',province); if(regency) mappingQ.eq('regency',regency);
+    const mappings=(await mappingQ).data||[];
+    const ids=[...new Set(mappings.map(x=>x.content_id).filter(Boolean))].slice(0,3000);
+    const [articles,videos,events]=await Promise.all([
+      ids.length ? v19MoneySafe(()=>adminClient.from('articles').select('id,title,status,views,created_at,published_at').in('id',ids).limit(3000)) : [],
+      ids.length ? v19MoneySafe(()=>adminClient.from('videos').select('id,title,status,views,created_at').in('id',ids).limit(3000)) : [],
+      v19MoneySafe(()=>adminClient.from('analytics_events').select('content_type,content_id,event_type,created_at').gte('created_at',new Date(Date.now()-14*86400000).toISOString()).limit(20000))
+    ]);
+    const mapById=new Map(mappings.map(m=>[String(m.content_id),m]));
+    const roll={}; const ensure=k=>roll[k]||(roll[k]={wilayah:k,artikel:0,video:0,views:0,aktivitas:0,terbit:0});
+    for(const a of articles){const m=mapById.get(String(a.id));const k=m?.regency||m?.province||'Tanpa wilayah';const z=ensure(k);z.artikel++;z.views+=Number(a.views||0);if(a.status==='published')z.terbit++;}
+    for(const v of videos){const m=mapById.get(String(v.id));const k=m?.regency||m?.province||'Tanpa wilayah';const z=ensure(k);z.video++;z.views+=Number(v.views||0);}
+    for(const e of events){const m=mapById.get(String(e.content_id));if(!m)continue;const k=m.regency||m.province||'Tanpa wilayah';ensure(k).aktivitas++;}
+    const rows=Object.values(roll).sort((a,b)=>(b.views+b.aktivitas)-(a.views+a.aktivitas));
+    res.json({province,regency,rows,mapped:mappings.length,catalog:regionCatalog,generated_at:new Date().toISOString()});
+  }catch(error){res.status(500).json({error:error.message});}
+});
+app.post('/api/admin/owner/regions/content/:type/:id', admin, ownerWrite, async (req,res)=>{
+  try{
+    const type=['article','video'].includes(req.params.type)?req.params.type:null; if(!type) return res.status(400).json({error:'content type tidak valid'});
+    const b=req.body||{}; const row={content_type:type,content_id:req.params.id,country:'ID',region_level:['country','province','regency','district','city'].includes(b.region_level)?b.region_level:'regency',province:cleanText(b.province,120)||null,regency:cleanText(b.regency,120)||null,district:cleanText(b.district,120)||null,city:cleanText(b.city,120)||null,latitude:b.latitude===null?null:Number(b.latitude)||null,longitude:b.longitude===null?null:Number(b.longitude)||null,confidence:Math.min(1,Math.max(0,Number(b.confidence??1))),source:cleanText(b.source,300)||'owner',evidence:b.evidence&&typeof b.evidence==='object'?b.evidence:{}};
+    const {data,error}=await adminClient.from('owner_content_regions').upsert(row,{onConflict:'content_type,content_id'}).select().single();if(error)throw error;await auditOwnerAction(req,'regional_mapping_updated',type,req.params.id,row);res.json(data);
+  }catch(error){res.status(400).json({error:error.message});}
+});
+
+app.get('/api/admin/owner/studio/projects', admin, async (req,res)=>{
+  try{let q=adminClient.from('owner_media_edit_projects').select('*').order('updated_at',{ascending:false}).limit(80);if(req.query.content_type)q=q.eq('content_type',req.query.content_type);if(req.query.content_id)q=q.eq('content_id',req.query.content_id);const {data,error}=await q;if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}
+});
+app.post('/api/admin/owner/studio/projects', admin, ownerWrite, async (req,res)=>{
+  try{const b=req.body||{};const row={content_type:['article','video','image'].includes(b.content_type)?b.content_type:'article',content_id:cleanText(b.content_id,120)||null,name:cleanText(b.name,180)||'Proyek Studio',status:'draft',narrative:b.narrative&&typeof b.narrative==='object'?b.narrative:{},visual:b.visual&&typeof b.visual==='object'?b.visual:{},video:b.video&&typeof b.video==='object'?b.video:{},export:b.export&&typeof b.export==='object'?b.export:{},created_by:req.user.id,updated_by:req.user.id};const {data,error}=await adminClient.from('owner_media_edit_projects').insert(row).select().single();if(error)throw error;await auditOwnerAction(req,'studio_project_created','owner_media_edit_project',data.id,{content_type:row.content_type,content_id:row.content_id});res.status(201).json(data);}catch(error){res.status(400).json({error:error.message});}
+});
+app.patch('/api/admin/owner/studio/projects/:id', admin, ownerWrite, async (req,res)=>{
+  try{const b=req.body||{},patch={updated_by:req.user.id};for(const k of ['name','status'])if(b[k]!==undefined)patch[k]=cleanText(b[k],180);for(const k of ['narrative','visual','video','export'])if(b[k]!==undefined)patch[k]=b[k]&&typeof b[k]==='object'?b[k]:{};const {data,error}=await adminClient.from('owner_media_edit_projects').update(patch).eq('id',req.params.id).select().single();if(error)throw error;await auditOwnerAction(req,'studio_project_updated','owner_media_edit_project',req.params.id,patch);res.json(data);}catch(error){res.status(400).json({error:error.message});}
+});
+app.post('/api/admin/owner/studio/assets', admin, ownerWrite, async (req,res)=>{
+  try{const b=req.body||{};const row={content_type:['article','video','image','audio'].includes(b.content_type)?b.content_type:'image',content_id:cleanText(b.content_id,120)||null,asset_role:cleanText(b.asset_role,80)||'primary',source_url:cleanText(b.source_url,3000)||null,storage_path:cleanText(b.storage_path,1000)||null,mime_type:cleanText(b.mime_type,200)||null,byte_size:Math.max(0,Number(b.byte_size)||0),width:Math.max(0,Number(b.width)||0)||null,height:Math.max(0,Number(b.height)||0)||null,duration_ms:Math.max(0,Number(b.duration_ms)||0)||null,metadata:b.metadata&&typeof b.metadata==='object'?b.metadata:{},created_by:req.user.id};const {data,error}=await adminClient.from('owner_media_assets').insert(row).select().single();if(error)throw error;res.status(201).json(data);}catch(error){res.status(400).json({error:error.message});}
+});
+
+app.get('/api/admin/owner/video/:id/intelligence', admin, async (req,res)=>{
+  try{const [snap,queue]=await Promise.all([adminClient.from('owner_video_insight_snapshots').select('*').eq('video_id',req.params.id).order('observed_at',{ascending:false}).limit(60),adminClient.from('owner_video_clip_queue').select('*').eq('video_id',req.params.id).order('score',{ascending:false}).limit(30)]);res.json({snapshots:snap.data||[],clips:queue.data||[]});}catch(error){res.status(500).json({error:error.message});}
+});
+app.post('/api/admin/owner/video/:id/intelligence/snapshot', admin, ownerWrite, async (req,res)=>{
+  try{const b=req.body||{};const row={video_id:req.params.id,views:Math.max(0,Number(b.views)||0),watch_seconds:Math.max(0,Number(b.watch_seconds)||0),average_watch_seconds:Math.max(0,Number(b.average_watch_seconds)||0),completion_rate:Math.max(0,Math.min(1,Number(b.completion_rate)||0)),dropoff_second:b.dropoff_second===null?null:Number(b.dropoff_second)||null,retention:Array.isArray(b.retention)?b.retention:[],metadata:b.metadata&&typeof b.metadata==='object'?b.metadata:{}};const {data,error}=await adminClient.from('owner_video_insight_snapshots').insert(row).select().single();if(error)throw error;res.status(201).json(data);}catch(error){res.status(400).json({error:error.message});}
+});
+
+app.get('/api/admin/owner/knowledge/entities', admin, async (_req,res)=>{try{const {data,error}=await adminClient.from('owner_knowledge_entities').select('*').order('updated_at',{ascending:false}).limit(300);if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}});
+app.get('/api/admin/owner/trust/provenance/:type/:id', admin, async (req,res)=>{try{const {data,error}=await adminClient.from('owner_content_provenance').select('*').eq('content_type',req.params.type).eq('content_id',req.params.id).order('created_at',{ascending:false});if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}});
+
+app.get('/api/admin/owner/experiments', admin, async (_req,res)=>{try{const {data,error}=await adminClient.from('owner_experiments').select('*').order('updated_at',{ascending:false}).limit(100);if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}});
+app.post('/api/admin/owner/experiments', admin, ownerWrite, async (req,res)=>{try{const b=req.body||{};const row={name:cleanText(b.name,180)||'Experiment',experiment_type:['headline','thumbnail','homepage','recommendation','notification','advertiser_placement','video'].includes(b.experiment_type)?b.experiment_type:'headline',status:'draft',hypothesis:cleanText(b.hypothesis,2000)||null,control:b.control&&typeof b.control==='object'?b.control:{},variants:Array.isArray(b.variants)?b.variants:[],primary_metric:cleanText(b.primary_metric,120)||null,created_by:req.user.id};const {data,error}=await adminClient.from('owner_experiments').insert(row).select().single();if(error)throw error;res.status(201).json(data);}catch(error){res.status(400).json({error:error.message});}});
+
+app.get('/api/admin/owner/agents', admin, async (_req,res)=>{try{const {data,error}=await adminClient.from('owner_agent_registry').select('*').order('domain',{ascending:true});if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}});
+app.get('/api/admin/owner/ad-inventory', admin, async (_req,res)=>{try{const {data,error}=await adminClient.from('owner_ad_inventory').select('*').order('active',{ascending:false}).order('placement',{ascending:true});if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}});
+
+
+/* =========================================================
+   V19 ENTERPRISE INTELLIGENCE FABRIC — UNIFIED CONTROL LAYER
+========================================================= */
+app.get('/api/admin/owner/os/overview', admin, async (_req,res)=>{
+  try{
+    const [entities,events,decisions,scenarios,runs,caps]=await Promise.all([
+      adminClient.from('owner_os_entities').select('id',{count:'exact',head:true}),
+      adminClient.from('owner_os_events').select('id',{count:'exact',head:true}),
+      adminClient.from('owner_os_decisions').select('id,approval_status,action_status,risk_level').order('created_at',{ascending:false}).limit(100),
+      adminClient.from('owner_os_scenarios').select('id,status,domain,updated_at').order('updated_at',{ascending:false}).limit(50),
+      adminClient.from('owner_agent_runs').select('id,agent_key,status,approval_required,risk_level,created_at').order('created_at',{ascending:false}).limit(50),
+      adminClient.from('owner_os_capabilities').select('*').order('domain',{ascending:true}).order('capability_key',{ascending:true})
+    ]);
+    for(const q of [entities,events,decisions,scenarios,runs,caps]) if(q.error) throw q.error;
+    const ds=decisions.data||[];
+    res.json({
+      counts:{entities:entities.count||0,events:events.count||0,decisions:ds.length,scenarios:(scenarios.data||[]).length,agent_runs:(runs.data||[]).length,capabilities:(caps.data||[]).length},
+      decisions:ds.slice(0,20), scenarios:scenarios.data||[], agent_runs:runs.data||[], capabilities:caps.data||[]
+    });
+  }catch(error){res.status(500).json({error:error.message});}
+});
+
+app.post('/api/admin/owner/os/entities', admin, ownerWrite, async (req,res)=>{
+  try{
+    const b=req.body||{}; const entityType=cleanText(b.entity_type,60); const entityId=cleanText(b.entity_id,160); if(!entityType||!entityId) return res.status(400).json({error:'entity_type dan entity_id wajib.'});
+    const canonicalKey=cleanText(b.canonical_key,220)||`${entityType}:${entityId}`;
+    const row={entity_type:entityType,entity_id:entityId,canonical_key:canonicalKey,display_name:cleanText(b.display_name,240)||null,region:b.region&&typeof b.region==='object'?b.region:{},metadata:b.metadata&&typeof b.metadata==='object'?b.metadata:{},status:cleanText(b.status,40)||'active',updated_at:new Date().toISOString()};
+    const {data,error}=await adminClient.from('owner_os_entities').upsert(row,{onConflict:'canonical_key'}).select().single(); if(error) throw error;
+    await auditOwnerAction(req,'os_entity_registered','owner_os_entity',data.id,{canonical_key:canonicalKey}); res.status(201).json(data);
+  }catch(error){res.status(400).json({error:error.message});}
+});
+
+app.post('/api/admin/owner/os/events', admin, ownerWrite, async (req,res)=>{
+  try{
+    const b=req.body||{}; const row={event_type:cleanText(b.event_type,100)||'event',domain:cleanText(b.domain,80)||'platform',entity_key:cleanText(b.entity_key,220)||null,severity:['info','low','medium','high','critical'].includes(b.severity)?b.severity:'info',payload:b.payload&&typeof b.payload==='object'?b.payload:{},occurred_at:b.occurred_at||new Date().toISOString(),actor_id:req.user.id};
+    const {data,error}=await adminClient.from('owner_os_events').insert(row).select().single(); if(error) throw error; res.status(201).json(data);
+  }catch(error){res.status(400).json({error:error.message});}
+});
+
+app.get('/api/admin/owner/os/decisions', admin, async (_req,res)=>{try{const {data,error}=await adminClient.from('owner_os_decisions').select('*').order('created_at',{ascending:false}).limit(100);if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}});
+app.post('/api/admin/owner/os/decisions', admin, ownerWrite, async (req,res)=>{
+  try{const b=req.body||{};const row={decision_key:cleanText(b.decision_key,180)||'decision',signal_id:cleanText(b.signal_id,80)||null,domain:cleanText(b.domain,80)||'owner',risk_level:['low','medium','high','critical'].includes(b.risk_level)?b.risk_level:'low',recommendation:cleanText(b.recommendation,3000)||null,action_type:cleanText(b.action_type,120)||null,approval_status:['pending','approved','rejected'].includes(b.approval_status)?b.approval_status:'pending',action_status:['not_started','ready','running','completed','blocked'].includes(b.action_status)?b.action_status:'not_started',owner_id:req.user.id,decision_data:b.decision_data&&typeof b.decision_data==='object'?b.decision_data:{},outcome_data:b.outcome_data&&typeof b.outcome_data==='object'?b.outcome_data:{}};const {data,error}=await adminClient.from('owner_os_decisions').insert(row).select().single();if(error)throw error;await adminClient.from('owner_os_events').insert({event_type:'decision_created',domain:row.domain,entity_key:row.decision_key,severity:row.risk_level,payload:{decision_id:data.id}});res.status(201).json(data);}catch(error){res.status(400).json({error:error.message});}
+});
+
+app.get('/api/admin/owner/os/scenarios', admin, async (_req,res)=>{try{const {data,error}=await adminClient.from('owner_os_scenarios').select('*').order('updated_at',{ascending:false}).limit(100);if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}});
+app.post('/api/admin/owner/os/scenarios', admin, ownerWrite, async (req,res)=>{try{const b=req.body||{};const row={name:cleanText(b.name,180)||'Skenario',domain:cleanText(b.domain,80)||'enterprise',baseline:b.baseline&&typeof b.baseline==='object'?b.baseline:{},assumptions:b.assumptions&&typeof b.assumptions==='object'?b.assumptions:{},projections:b.projections&&typeof b.projections==='object'?b.projections:{},risk_summary:b.risk_summary&&typeof b.risk_summary==='object'?b.risk_summary:{},status:['draft','ready','simulated','approved','archived'].includes(b.status)?b.status:'draft',created_by:req.user.id};const {data,error}=await adminClient.from('owner_os_scenarios').insert(row).select().single();if(error)throw error;await auditOwnerAction(req,'scenario_created','owner_os_scenario',data.id,{name:row.name});res.status(201).json(data);}catch(error){res.status(400).json({error:error.message});}});
+
+app.get('/api/admin/owner/os/agent-runs', admin, async (_req,res)=>{try{const {data,error}=await adminClient.from('owner_agent_runs').select('*').order('created_at',{ascending:false}).limit(100);if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}});
+app.post('/api/admin/owner/os/agent-runs', admin, ownerWrite, async (req,res)=>{try{const b=req.body||{};const row={agent_key:cleanText(b.agent_key,100)||'owner_copilot',task_key:cleanText(b.task_key,160)||'review',status:'queued',risk_level:['low','medium','high','critical'].includes(b.risk_level)?b.risk_level:'low',input_data:b.input_data&&typeof b.input_data==='object'?b.input_data:{},approval_required:b.approval_required!==false,created_by:req.user.id};const {data,error}=await adminClient.from('owner_agent_runs').insert(row).select().single();if(error)throw error;await auditOwnerAction(req,'agent_run_queued','owner_agent_run',data.id,{agent_key:row.agent_key,approval_required:row.approval_required});res.status(201).json(data);}catch(error){res.status(400).json({error:error.message});}});
+
+app.get('/api/admin/owner/os/capabilities', admin, async (_req,res)=>{try{const {data,error}=await adminClient.from('owner_os_capabilities').select('*').order('domain',{ascending:true}).order('capability_key',{ascending:true});if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}});
+
+
+
+/* =========================================================
+   V19 MASTER MEDIA OPERATING SYSTEM — BLUEPRINT COVERAGE
+   Source: MUDA V19 Future Media Intelligence Blueprint
+========================================================= */
+const MEDIA_OS_SPEC = [
+  {key:'executive_intelligence',name:'Executive Intelligence',features:['Mission Control','Morning/Midday/Evening brief','Anomaly summary','Risk heatmap','KPI tree','North-star health','Decision queue']},
+  {key:'newsroom_intelligence',name:'Newsroom Intelligence',features:['Story opportunity score','Event acceleration radar','Source reliability','Duplicate/near-duplicate detection','Fact-check queue','Correction/retraction workflow','Quality gate','Editorial workload optimizer']},
+  {key:'video_intelligence',name:'Video Intelligence',features:['Live monitor','Watch-time curve','Retention curve','Completion rate','Thumbnail/title experiment registry','Clip extraction queue','Highlight detection','Short/long-form repurposing map','Live stream health','Video-to-article linking','Archive search']},
+  {key:'audience_intelligence',name:'Audience Intelligence',features:['DAU/WAU/MAU','New/returning users','Cohort retention','Session depth','Recirculation','Audience segments','Demand topics','Churn/engagement risk','Personalization guardrails']},
+  {key:'distribution_intelligence',name:'Distribution Intelligence',features:['Web','Video platform','Social distribution','Newsletter','Search/discoverability','AI-answer visibility','Platform dependency score','Owned vs third-party audience share']},
+  {key:'advertising_intelligence',name:'Advertising Intelligence',features:['Advertiser CRM','Lead inbox','Proposal generator','Media plan','Inventory calendar','Rate card','Campaign/order management','Placement map','Impression/click/conversion monitoring','Campaign pacing','Make-good management','Advertiser health score','Yield by placement']},
+  {key:'commercial_billing',name:'Commercial & Billing OS',features:['Quotation','Approval','Insertion/order form','Contract reference','Invoice','Payment status','Receipt/official payment acknowledgement','Overdue reminders','Reconciliation','Revenue recognition state','Document numbering','Document audit trail','PDF/print/export']},
+  {key:'finance_intelligence',name:'Finance Intelligence',features:['Cash position','Cash in/out','Runway','AR/AP','Canonical ledger','Budget/variance','Recurring cash impact','Owner funding','Cost centres','Close/reopen','Reconciliation','Finance anomaly detection']},
+  {key:'operations_intelligence',name:'Operations Intelligence',features:['Provider health','Scheduler','Automation runs','Queue backlog','Incident commander','Self-healing proposal','Dependency map','SLA/SLO monitor','Recovery checklist']},
+  {key:'trust_safety',name:'Trust & Safety',features:['Misinformation risk flag','Source diversity','Claim/evidence map','Correction workflow','AI provenance','Generated-media disclosure','Copyright/license registry','Privacy/data retention control','Moderation/reputation']},
+  {key:'knowledge_archive',name:'Knowledge & Archive',features:['Searchable article/video archive','Transcript index','OCR/scene metadata','Topic/entity timeline','People/organization/location graph','Source archive','Licensed media registry','Institutional memory']},
+  {key:'ai_agent_layer',name:'AI / Agent Layer',features:['Owner Copilot','Editorial copilot','Finance copilot','Advertiser copilot','Video copilot','Audience copilot','Workflow planner','What-if simulator','Scenario comparison','Autonomous recommendation','Approval-gated execution']},
+  {key:'experimentation',name:'Experimentation Lab',features:['A/B tests','Headline tests','Thumbnail tests','Homepage slot tests','Notification timing tests','Recommendation tests','Advertiser placement tests','Experiment registry','Statistical result log']},
+  {key:'platform_globalization',name:'Platform & Globalization',features:['Indonesian + English','Translation pipeline','Locale/timezone/currency','Multi-brand / multi-site readiness','Multi-region CDN/asset strategy','Role/tenant isolation','Partner/API access']},
+  {key:'board_owner_intelligence',name:'Board / Owner Intelligence',features:['Daily briefing','Weekly executive review','Monthly close pack','Advertiser revenue pack','Audience growth pack','Content efficiency pack','Risk register','Strategy scenarios','Export to PDF/print']}
+];
+const MEDIA_OS_SCREENS = [
+  {key:'executive_wall',name:'Executive Wall',flow:['live KPIs','signal queue','cash pulse','audience pulse','video pulse','alert rail']},
+  {key:'live_media_ecosystem',name:'Live Media Ecosystem',flow:['Web','Article','Video','Audience','Distribution','Advertiser','Revenue','Learning']},
+  {key:'finance_administration',name:'Finance Administration',flow:['Overview','Cashflow','AR','AP','Ledger','Budget','Recurring','Reconciliation','Close','Documents']},
+  {key:'advertiser_command_center',name:'Advertiser Command Center',flow:['Leads','Proposals','Orders','Inventory','Campaigns','Billing','Payments','Renewal']},
+  {key:'video_command_center',name:'Video Command Center',flow:['Live','Library','Retention','Clips','Experiments','Distribution','Revenue']},
+  {key:'intelligence_lab',name:'Intelligence Lab',flow:['Signals','Recommendations','What-if','Experiments','Outcomes','Evolution']}
+];
+const MEDIA_OS_MATURITY = [
+  {level:'L1',name:'Monitor',description:'melihat apa yang terjadi'},
+  {level:'L2',name:'Explain',description:'memahami mengapa'},
+  {level:'L3',name:'Recommend',description:'mengetahui apa yang dilakukan'},
+  {level:'L4',name:'Execute',description:'mengeksekusi melalui policy/risk gate'},
+  {level:'L5',name:'Learn',description:'mengukur hasil'},
+  {level:'L6',name:'Optimize',description:'meningkatkan terus-menerus'},
+  {level:'L7',name:'Coordinate',description:'mengkoordinasikan content, audience, finance, commercial'},
+  {level:'L8',name:'Scale',description:'multi-brand, multi-region, partner ecosystem'}
+];
+const MEDIA_OS_CONTRACTS = ['canonical event ID','actor/user ID','source/provider','timestamp','entity type/entity ID','correlation ID','confidence','evidence references','risk level','action key','outcome','audit state'];
+const MEDIA_OS_TRUTH_RULES = ['audience counts','advertiser conversions','revenue','cash balance','AI confidence','provider availability','campaign delivery','legal/payment status'];
+
+app.post('/api/admin/owner/media-os/sync', admin, ownerWrite, async (req,res)=>{
+  try{
+    const now=new Date();
+    const since14=new Date(now.getTime()-14*86400000).toISOString();
+    const since30=new Date(now.getTime()-30*86400000).toISOString();
+    const [articlesR,videosR,eventsR]=await Promise.all([
+      adminClient.from('articles').select('id,title,summary,category,views,likes,shares,published_at,created_at,intelligence_score,importance_score,status,featured,breaking,author_name').order('published_at',{ascending:false,nullsLast:true}).limit(5000),
+      adminClient.from('videos').select('id,title,description,category,views,likes,shares,created_at,published_at,status,thumbnail_url,video_url').order('created_at',{ascending:false}).limit(3000),
+      adminClient.from('analytics_events').select('event_type,content_type,content_id,session_id,path,referrer,created_at').gte('created_at',since30).order('created_at',{ascending:true}).limit(30000)
+    ]);
+    if(articlesR.error) throw articlesR.error;
+    if(videosR.error) throw videosR.error;
+    if(eventsR.error) throw eventsR.error;
+    const articles=articlesR.data||[], videos=videosR.data||[], events=eventsR.data||[];
+    const countView = e => /view|read|impression|play/i.test(String(e.event_type||''));
+    const countSession = e => e.session_id ? String(e.session_id) : null;
+
+    const storyRows=articles.map(a=>({
+      article_id:String(a.id),
+      opportunity_score:Number(a.intelligence_score??0),
+      acceleration_score:Number(a.importance_score??0),
+      source_reliability:null,
+      duplicate_cluster_key:null,
+      fact_check_status:'queued',
+      quality_gate_status:a.status==='published'?'passed':'pending',
+      workload_score:0,
+      evidence:{source:'articles',status:a.status||null,category:a.category||null,featured:Boolean(a.featured),breaking:Boolean(a.breaking)},
+      observed_at:now.toISOString()
+    }));
+    if(storyRows.length){
+      const {error}=await adminClient.from('owner_story_intelligence').upsert(storyRows,{onConflict:'article_id'});
+      if(error) throw error;
+    }
+
+    const days={};
+    for(const e of events){
+      const d=String(e.created_at||'').slice(0,10); if(!d) continue;
+      const x=days[d]||(days[d]={events:0,views:0,sessions:new Set(),articles:new Set(),videos:new Set(),engaged:0});
+      x.events++;
+      if(countView(e)) x.views++;
+      const sid=countSession(e); if(sid) x.sessions.add(sid);
+      if(e.content_type==='article'&&e.content_id)x.articles.add(String(e.content_id));
+      if(e.content_type==='video'&&e.content_id)x.videos.add(String(e.content_id));
+      if(/engage|like|share|comment|subscribe|newsletter|contact/i.test(String(e.event_type||'')))x.engaged++;
+    }
+    const audienceRows=Object.entries(days).map(([metric_date,x])=>({
+      metric_date,
+      dau:0,
+      wau:0,
+      mau:0,
+      new_users:0,
+      returning_users:0,
+      sessions:x.sessions.size,
+      session_depth:x.sessions.size?x.events/x.sessions.size:0,
+      recirculation_rate:x.views?Math.min(1,Math.max(0,(x.articles.size+x.videos.size-1)/Math.max(1,x.views))):0,
+      engagement_rate:x.events?Math.min(1,x.engaged/x.events):0,
+      churn_risk:0,
+      segment_data:{mapped_articles:x.articles.size,mapped_videos:x.videos.size},
+      demand_topics:[],
+      source:'analytics_events'
+    }));
+    for(const row of audienceRows){
+      const {error}=await adminClient.from('owner_audience_intelligence_daily').upsert(row,{onConflict:'metric_date'});
+      if(error) throw error;
+    }
+
+    const distributionRows=[];
+    for(const a of articles){
+      distributionRows.push({content_type:'article',content_id:String(a.id),channel:'web',owned:true,impressions:Number(a.views||0),clicks:0,conversions:0,search_visibility:null,ai_answer_visibility:null,dependency_score:0,metadata:{source:'articles',category:a.category||null,published_at:a.published_at||null}});
+    }
+    for(const v of videos){
+      distributionRows.push({content_type:'video',content_id:String(v.id),channel:'web',owned:true,impressions:Number(v.views||0),clicks:0,conversions:0,search_visibility:null,ai_answer_visibility:null,dependency_score:0,metadata:{source:'videos',category:v.category||null,published_at:v.published_at||v.created_at||null}});
+    }
+    if(distributionRows.length){
+      const {error}=await adminClient.from('owner_distribution_intelligence').upsert(distributionRows,{onConflict:'content_type,content_id,channel'});
+      if(error) throw error;
+    }
+
+    const summary={
+      synced_at:now.toISOString(),
+      articles:articles.length,
+      videos:videos.length,
+      analytics_events:events.length,
+      story_intelligence:storyRows.length,
+      audience_days:audienceRows.length,
+      distribution_records:distributionRows.length,
+      window_14d:since14,
+      window_30d:since30
+    };
+    await adminClient.from('owner_os_events').insert({event_type:'media_os_master_sync',domain:'media_os',entity_key:'media-os-master',severity:'info',payload:summary,actor_id:req.user.id});
+    res.json({ok:true,summary});
+  }catch(error){
+    res.status(400).json({ok:false,error:error.message});
+  }
+});
+
+app.get('/api/admin/owner/media-os/master', admin, async (_req,res)=>{
+  try{
+    const {data:caps,error}=await adminClient.from('owner_media_os_capabilities').select('*').order('engine_key',{ascending:true}).order('feature_name',{ascending:true});
+    if(error) throw error;
+    const capMap=new Map((caps||[]).map(x=>[`${x.engine_key}|${x.feature_name}`,x]));
+    const engines=MEDIA_OS_SPEC.map(engine=>({...engine,capabilities:engine.features.map(feature=>{
+      const slug=feature.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+      const row=capMap.get(`${engine.key}|${feature}`);
+      return row || {feature_name:feature,capability_key:`${engine.key}.${slug}`,status:'planned',maturity:1,evidence:'Belum ada wiring produksi yang terverifikasi.'};
+    })}));
+    res.json({version:'V19',engines,screens:MEDIA_OS_SCREENS,maturity:MEDIA_OS_MATURITY,contracts:MEDIA_OS_CONTRACTS,truth_rules:MEDIA_OS_TRUTH_RULES,generated_at:new Date().toISOString()});
+  }catch(error){res.status(500).json({error:error.message});}
+});
+
+app.get('/api/admin/owner/media-os/audience', admin, async (req,res)=>{
+  try{let q=adminClient.from('owner_audience_intelligence_daily').select('*').order('metric_date',{ascending:false}).limit(Number(req.query.limit||90));if(req.query.from)q=q.gte('metric_date',req.query.from);if(req.query.to)q=q.lte('metric_date',req.query.to);const {data,error}=await q;if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}
+});
+app.post('/api/admin/owner/media-os/audience', admin, ownerWrite, async (req,res)=>{
+  try{const b=req.body||{};if(!b.metric_date) return res.status(400).json({error:'metric_date wajib'});const n=k=>Math.max(0,Number(b[k]||0));const row={metric_date:b.metric_date,dau:n('dau'),wau:n('wau'),mau:n('mau'),new_users:n('new_users'),returning_users:n('returning_users'),sessions:n('sessions'),session_depth:Math.max(0,Number(b.session_depth||0)),recirculation_rate:Math.max(0,Math.min(1,Number(b.recirculation_rate||0))),engagement_rate:Math.max(0,Math.min(1,Number(b.engagement_rate||0))),churn_risk:Math.max(0,Math.min(1,Number(b.churn_risk||0))),segment_data:b.segment_data&&typeof b.segment_data==='object'?b.segment_data:{},demand_topics:Array.isArray(b.demand_topics)?b.demand_topics:[],source:cleanText(b.source,100)||'analytics'};const {data,error}=await adminClient.from('owner_audience_intelligence_daily').upsert(row,{onConflict:'metric_date'}).select().single();if(error)throw error;await adminClient.from('owner_os_events').insert({event_type:'audience_daily_snapshot',domain:'audience',entity_key:`audience:${row.metric_date}`,severity:'info',payload:row,actor_id:req.user.id});res.status(201).json(data);}catch(error){res.status(400).json({error:error.message});}
+});
+
+app.get('/api/admin/owner/media-os/distribution', admin, async (_req,res)=>{try{const {data,error}=await adminClient.from('owner_distribution_intelligence').select('*').order('observed_at',{ascending:false}).limit(300);if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}});
+app.post('/api/admin/owner/media-os/distribution', admin, ownerWrite, async (req,res)=>{try{const b=req.body||{};const row={content_type:cleanText(b.content_type,30)||'article',content_id:cleanText(b.content_id,120)||'',channel:cleanText(b.channel,80)||'web',owned:b.owned===true,impressions:Math.max(0,Number(b.impressions||0)),clicks:Math.max(0,Number(b.clicks||0)),conversions:Math.max(0,Number(b.conversions||0)),search_visibility:b.search_visibility===null?null:Number(b.search_visibility||0),ai_answer_visibility:b.ai_answer_visibility===null?null:Number(b.ai_answer_visibility||0),dependency_score:b.dependency_score===null?null:Number(b.dependency_score||0),metadata:b.metadata&&typeof b.metadata==='object'?b.metadata:{}};if(!row.content_id)return res.status(400).json({error:'content_id wajib'});const {data,error}=await adminClient.from('owner_distribution_intelligence').insert(row).select().single();if(error)throw error;res.status(201).json(data);}catch(error){res.status(400).json({error:error.message});}});
+
+app.get('/api/admin/owner/media-os/operations/incidents', admin, async (_req,res)=>{try{const {data,error}=await adminClient.from('owner_operations_incidents').select('*').order('started_at',{ascending:false}).limit(100);if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}});
+app.post('/api/admin/owner/media-os/operations/incidents', admin, ownerWrite, async (req,res)=>{try{const b=req.body||{};const row={incident_key:cleanText(b.incident_key,100)||`INC-${Date.now()}`,title:cleanText(b.title,240)||'Incident',severity:['low','medium','high','critical'].includes(b.severity)?b.severity:'medium',status:['open','investigating','mitigating','resolved','closed'].includes(b.status)?b.status:'open',service:cleanText(b.service,120)||null,provider:cleanText(b.provider,120)||null,sla_target_minutes:Number(b.sla_target_minutes)||null,root_cause:cleanText(b.root_cause,3000)||null,recovery_checklist:Array.isArray(b.recovery_checklist)?b.recovery_checklist:[],metadata:b.metadata&&typeof b.metadata==='object'?b.metadata:{},created_by:req.user.id};const {data,error}=await adminClient.from('owner_operations_incidents').insert(row).select().single();if(error)throw error;await adminClient.from('owner_os_events').insert({event_type:'incident_created',domain:'operations',entity_key:row.incident_key,severity:row.severity,payload:{incident_id:data.id,title:row.title},actor_id:req.user.id});res.status(201).json(data);}catch(error){res.status(400).json({error:error.message});}});
+
+app.get('/api/admin/owner/media-os/trust/claims', admin, async (req,res)=>{try{let q=adminClient.from('owner_trust_claims').select('*').order('created_at',{ascending:false}).limit(200);if(req.query.content_type)q=q.eq('content_type',req.query.content_type);if(req.query.content_id)q=q.eq('content_id',req.query.content_id);const {data,error}=await q;if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}});
+app.post('/api/admin/owner/media-os/trust/claims', admin, ownerWrite, async (req,res)=>{try{const b=req.body||{};const row={content_type:cleanText(b.content_type,30)||'article',content_id:cleanText(b.content_id,120)||'',claim_text:cleanText(b.claim_text,5000)||'',risk_level:['low','medium','high','critical'].includes(b.risk_level)?b.risk_level:'medium',evidence_refs:Array.isArray(b.evidence_refs)?b.evidence_refs:[],source_diversity:b.source_diversity===null?null:Number(b.source_diversity||0),verification_status:['unverified','checking','verified','disputed','retracted'].includes(b.verification_status)?b.verification_status:'unverified',ai_assisted:b.ai_assisted===true,human_reviewed:b.human_reviewed===true,correction_state:['none','pending','corrected','retracted'].includes(b.correction_state)?b.correction_state:'none',copyright_status:['unknown','owned','licensed','restricted','expired'].includes(b.copyright_status)?b.copyright_status:'unknown',generated_media_disclosure:b.generated_media_disclosure===true,retention_until:b.retention_until||null};if(!row.content_id||!row.claim_text)return res.status(400).json({error:'content_id dan claim_text wajib'});const {data,error}=await adminClient.from('owner_trust_claims').insert(row).select().single();if(error)throw error;await auditOwnerAction(req,'trust_claim_recorded',row.content_type,row.content_id,{claim_id:data.id,risk_level:row.risk_level});res.status(201).json(data);}catch(error){res.status(400).json({error:error.message});}});
+
+app.get('/api/admin/owner/media-os/archive', admin, async (req,res)=>{try{let q=adminClient.from('owner_media_archive_records').select('*').order('updated_at',{ascending:false}).limit(100);if(req.query.content_type)q=q.eq('content_type',req.query.content_type);if(req.query.content_id)q=q.eq('content_id',req.query.content_id);const {data,error}=await q;if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}});
+app.post('/api/admin/owner/media-os/archive', admin, ownerWrite, async (req,res)=>{try{const b=req.body||{};const row={content_type:cleanText(b.content_type,30)||'video',content_id:cleanText(b.content_id,120)||'',transcript:cleanText(b.transcript,500000)||null,transcript_language:cleanText(b.transcript_language,30)||null,ocr_text:cleanText(b.ocr_text,100000)||null,scene_metadata:Array.isArray(b.scene_metadata)?b.scene_metadata:[],topics:Array.isArray(b.topics)?b.topics:[],entity_refs:Array.isArray(b.entity_refs)?b.entity_refs:[],source_refs:Array.isArray(b.source_refs)?b.source_refs:[],license_refs:Array.isArray(b.license_refs)?b.license_refs:[],searchable:b.searchable!==false,indexed_at:new Date().toISOString()};if(!row.content_id)return res.status(400).json({error:'content_id wajib'});const {data,error}=await adminClient.from('owner_media_archive_records').upsert(row,{onConflict:'content_type,content_id'}).select().single();if(error)throw error;res.status(201).json(data);}catch(error){res.status(400).json({error:error.message});}});
+
+app.get('/api/admin/owner/media-os/platform', admin, async (_req,res)=>{try{const {data,error}=await adminClient.from('owner_platform_registry').select('*').order('created_at');if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}});
+app.get('/api/admin/owner/media-os/board/briefs', admin, async (_req,res)=>{try{const {data,error}=await adminClient.from('owner_board_brief_runs').select('*').order('generated_at',{ascending:false}).limit(50);if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}});
+
+app.get('/api/admin/owner/media-os/commercial/rate-cards', admin, async (_req,res)=>{try{const {data,error}=await adminClient.from('owner_ad_rate_cards').select('*').order('placement');if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}});
+app.post('/api/admin/owner/media-os/commercial/rate-cards', admin, ownerWrite, async (req,res)=>{try{const b=req.body||{};const row={rate_key:cleanText(b.rate_key,100)||`RATE-${Date.now()}`,placement:cleanText(b.placement,160)||'web',channel:cleanText(b.channel,80)||'web',region:cleanText(b.region,120)||null,unit:cleanText(b.unit,40)||'flat',rate:Math.max(0,Number(b.rate||0)),currency:cleanText(b.currency,8).toUpperCase()||'IDR',min_order:Math.max(1,Number(b.min_order||1)),active:b.active!==false,metadata:b.metadata&&typeof b.metadata==='object'?b.metadata:{}};const {data,error}=await adminClient.from('owner_ad_rate_cards').upsert(row,{onConflict:'rate_key'}).select().single();if(error)throw error;await auditOwnerAction(req,'rate_card_upserted','owner_ad_rate_card',data.id,row);res.status(201).json(data);}catch(error){res.status(400).json({error:error.message});}});
+app.get('/api/admin/owner/media-os/commercial/makegoods', admin, async (_req,res)=>{try{const {data,error}=await adminClient.from('owner_ad_makegoods').select('*').order('created_at',{ascending:false});if(error)throw error;res.json(data||[]);}catch(error){res.status(500).json({error:error.message});}});
+
+app.post('/api/admin/owner/os/scenarios/:id/simulate', admin, ownerWrite, async (req,res)=>{
+  try{
+    const {data,error}=await adminClient.from('owner_os_scenarios').select('*').eq('id',req.params.id).single(); if(error) throw error;
+    const baseline=data.baseline&&typeof data.baseline==='object'?data.baseline:{};
+    const assumptions=req.body?.assumptions&&typeof req.body.assumptions==='object'?req.body.assumptions:(data.assumptions||{});
+    const projections={}; const risks=[];
+    for(const [key,val] of Object.entries(baseline)){
+      if(typeof val!=='number') continue;
+      const a=assumptions[key];
+      if(typeof a==='number') projections[key]=val+a;
+      else if(a&&typeof a==='object'&&Number.isFinite(Number(a.growth_percent))) projections[key]=val*(1+Number(a.growth_percent)/100);
+      else if(a&&typeof a==='object'&&Number.isFinite(Number(a.delta))) projections[key]=val+Number(a.delta);
+      else projections[key]=val;
+      if(typeof a==='object'&&Number(a.risk||0)>=70) risks.push({metric:key,risk:Number(a.risk),reason:a.reason||'Risk assumption'});
+    }
+    const patch={assumptions,projections,risk_summary:{risks,generated_at:new Date().toISOString()},status:'simulated',updated_at:new Date().toISOString()};
+    const out=await adminClient.from('owner_os_scenarios').update(patch).eq('id',req.params.id).select().single(); if(out.error) throw out.error;
+    await adminClient.from('owner_os_events').insert({event_type:'scenario_simulated',domain:data.domain,entity_key:`scenario:${data.id}`,severity:risks.length?'medium':'info',payload:{scenario_id:data.id,projections,risks},actor_id:req.user.id});
+    res.json(out.data);
+  }catch(error){res.status(400).json({error:error.message});}
+});
 
 /* =========================================================
    404 HANDLER
