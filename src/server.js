@@ -365,6 +365,23 @@ const admin = async (request, response, next) => {
 };
 
 
+app.get(
+  '/api/admin/session',
+  admin,
+  async (request, response) => {
+    response.json({
+      ok: true,
+      user: {
+        id: request.user?.id || null,
+        email: request.user?.email || null
+      },
+      admin: request.admin || null,
+      role: request.role || 'admin'
+    });
+  }
+);
+
+
 /* =========================================================
    ANALYTICS
 ========================================================= */
