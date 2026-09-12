@@ -409,14 +409,34 @@ let token=sessionStorage.getItem(K)||'', user=JSON.parse(sessionStorage.getItem(
 let state={overview:null,content:[],homepage:[],radar:null,commands:[],wallet:[],payouts:[],schedules:[]};
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=n=>new Intl.NumberFormat('id-ID').format(Number(n||0));
-async function api(path,opt={}){const headers={'Content-Type':'application/json',...(opt.headers||{})};if(token)headers.Authorization='Bearer '+token;const r=await fetch(path,{...opt,headers});const t=await r.text();let d={};try{d=t?JSON.parse(t):{}}catch{d={error:t}}if(r.status===401){sessionStorage.removeItem(K);sessionStorage.removeItem(U);token='';user=null;location.reload();throw new Error('Sesi login tidak valid. Silakan login kembali.')}if(!r.ok)throw new Error(d.error||('HTTP '+r.status));return d}
+async function api(path,opt={}){const headers={'Content-Type':'application/json',...(opt.headers||{})};if(token)headers.Authorization='Bearer '+token;const r=await fetch(path,{...opt,headers});const t=await r.text();let d={};try{d=t?JSON.parse(t):{}}catch{d={error:t}}if(r.status===401){sessionStorage.removeItem(K);sessionStorage.removeItem(U);token='';user=null;throw new Error(d.error||'Sesi login tidak valid. Silakan login kembali.')}if(!r.ok)throw new Error(d.error||('HTTP '+r.status));return d}
 async function verifySession(){if(!token)return false;try{const d=await api('/api/admin/session');user=d.user||user;sessionStorage.setItem(U,JSON.stringify(user||{}));return true}catch{return false}}
-async function enter(){if(!(await verifySession()))return; $('login').classList.add('hidden');$('app').classList.remove('hidden');$('identity').textContent=user?.email||'';refreshAll()}
+async function enter(){
+  if(!(await verifySession())){
+    $('app').classList.add('hidden');
+    $('login').classList.remove('hidden');
+    $('loginMsg').textContent='Sesi belum valid. Silakan masuk kembali.';
+    return false;
+  }
+  $('login').classList.add('hidden');
+  $('app').classList.remove('hidden');
+  $('identity').textContent=user?.email||'';
+  await refreshAll();
+  return true;
+}
 function openModal(title,body){$('modalTitle').textContent=title;$('modalBody').innerHTML=body;$('modalBack').classList.remove('hidden')};function closeModal(){$('modalBack').classList.add('hidden')}
-async function login(){try{const d=await api('/api/admin/login',{method:'POST',body:JSON.stringify({email:$('loginEmail').value,password:$('loginPass').value})});token=d.token;user=d.user||{};sessionStorage.setItem(K,token);sessionStorage.setItem(U,JSON.stringify(user));enter()}catch(e){$('loginMsg').textContent=e.message}}
-async function logout(){sessionStorage.removeItem(K);sessionStorage.removeItem(U);location.reload()}
-function enter(){$('login').classList.add('hidden');$('app').classList.remove('hidden');$('identity').textContent=user?.email||'';refreshAll()}
-if(token){enter()} else {$('login')?.classList.remove('hidden');}
+async function login(){
+  $('loginMsg').textContent='Masuk sedang diverifikasi…';
+  try{
+    const d=await api('/api/admin/login',{method:'POST',body:JSON.stringify({email:$('loginEmail').value,password:$('loginPass').value})});
+    token=d.token;user=d.user||{};
+    sessionStorage.setItem(K,token);
+    sessionStorage.setItem(U,JSON.stringify(user));
+    await enter();
+  }catch(e){$('loginMsg').textContent=e.message}
+}
+async function logout(){sessionStorage.removeItem(K);sessionStorage.removeItem(U);token='';user=null;$('app').classList.add('hidden');$('login').classList.remove('hidden');$('loginMsg').textContent=''}
+if(token){enter().catch(e=>{sessionStorage.removeItem(K);sessionStorage.removeItem(U);token='';user=null;$('app').classList.add('hidden');$('login').classList.remove('hidden');$('loginMsg').textContent=e.message||'Sesi login tidak valid.'})} else {$('login')?.classList.remove('hidden');}
 $('loginPass').addEventListener('keydown',e=>{if(e.key==='Enter')login()});
 
 async function loadMediaOS(){
@@ -506,6 +526,7 @@ function toast(msg,bad=false){const d=document.createElement('div');d.textConten
 </script>
 <script src="/admin-intelligence.js"></script>
 <script src="/voice-intelligence.js"></script>
-<script src="/owner-cockpit.js" defer>document.getElementById('mediaosRefresh')?.addEventListener('click',loadMediaOS);
+<script src="/owner-cockpit.js" defer></script>
+<script>document.addEventListener('DOMContentLoaded',()=>document.getElementById('mediaosRefresh')?.addEventListener('click',loadMediaOS));
 </script>
 </body></html>
