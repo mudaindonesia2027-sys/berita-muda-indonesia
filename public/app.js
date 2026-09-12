@@ -713,15 +713,16 @@
         </div>`;
       $('#modalLike')?.addEventListener('click', async () => {
         const ok = await mutateCounter(`/api/articles/${encodeURIComponent(item.id)}/like`, 'Suka tersimpan.');
-        if (ok) item.likes = Number(item.likes || 0) + 1;
+        if (ok) { item.likes = Number(item.likes || 0) + 1; window.dispatchEvent(new CustomEvent('muda:reader-action',{detail:{action:'like',item}})); }
         const span = $('#modalLike span'); if (span) span.textContent = Number(item.likes || 0).toLocaleString('id-ID');
       });
-      $('#modalShare')?.addEventListener('click', () => shareArticle(item));
-      $('#modalSave')?.addEventListener('click', (e) => { const on = toggleSavedArticle(item); e.currentTarget.textContent = `🔖 ${on ? 'Tersimpan' : 'Simpan'}`; });
+      $('#modalShare')?.addEventListener('click', () => { shareArticle(item); window.dispatchEvent(new CustomEvent('muda:reader-action',{detail:{action:'share',item}})); });
+      $('#modalSave')?.addEventListener('click', (e) => { const on = toggleSavedArticle(item); e.currentTarget.textContent = `🔖 ${on ? 'Tersimpan' : 'Simpan'}`; if(on) window.dispatchEvent(new CustomEvent('muda:reader-action',{detail:{action:'saved',item}})); });
       renderCommentsPanel(item).then(html => { const mount = $('#readerComments'); if (mount) mount.innerHTML = html; });
     }
     registerView(item.id);
     trackEvent('article_open', 'article', item.id);
+    window.dispatchEvent(new CustomEvent('muda:article-read',{detail:item}));
     const canonicalUrl = `${window.location.origin}/berita/${encodeURIComponent(item.id)}`;
     try { window.history.replaceState({}, '', canonicalUrl); } catch {}
   }
