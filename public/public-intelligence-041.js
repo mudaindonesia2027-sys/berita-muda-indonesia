@@ -34,7 +34,7 @@
       <section class="intel-card map-card-041"><div class="intel-card-head"><span>MESIN PETA & WILAYAH</span><div class="intel-head-actions"><select id="mapGroupSelect" class="intel-select"></select><button class="intel-mini-btn" id="mapLocateBtn">Posisi saya</button></div></div><div id="mudaMap041" class="muda-map-041"></div><div id="mapLegend041" class="map-legend-041"></div><details class="intel-source"><summary>Sumber peta & wilayah</summary><p>Konten berita berasal dari database MUDA. Peta menggunakan OpenStreetMap melalui Leaflet ketika jaringan tersedia; posisi perangkat hanya digunakan setelah izin.</p></details></section>
       <section class="intel-card source-board-041"><div class="intel-card-head"><span>JALUR FAKTUAL</span><span class="intel-proof-badge">DATA → SUMBER → WAKTU</span></div><div id="proofRows041" class="proof-grid-041"></div></section>
     `;
-    const anchor=$('.region-hub')||$('.category-showcase')||main.firstElementChild; main.insertBefore(rail,anchor||main.firstChild);
+    const footerCta=$('.public-footer-cta'); if(footerCta) main.insertBefore(rail,footerCta); else main.appendChild(rail);
   }
 
   const readerKey='muda_reader_inventory_v1';
@@ -74,8 +74,20 @@
   let mapInstance=null, mapMarkers=[];
   function loadLeaflet(){return new Promise((resolve,reject)=>{if(window.L)return resolve();const link=document.createElement('link');link.rel='stylesheet';link.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';document.head.appendChild(link);const s=document.createElement('script');s.src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';s.onload=()=>resolve();s.onerror=reject;document.head.appendChild(s);});}
   async function initMap(){
-    const mount=$('#mudaMap041');if(!mount)return;try{await loadLeaflet();const regions=await get('/api/public/regions');if(!mapInstance){mapInstance=L.map(mount,{scrollWheelZoom:false}).setView([-7.3,110.4],8);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18,attribution:'© OpenStreetMap contributors'}).addTo(mapInstance);}mapMarkers.forEach(m=>m.remove());mapMarkers=[];const sel=$('#mapGroupSelect');if(sel){sel.innerHTML=`<option value="Jawa Tengah">Jawa Tengah</option>`+Object.keys(REGION_GROUPS).filter(x=>x!=='Jawa Tengah').map(x=>`<option>${esc(x)}</option>`).join('');sel.onchange=()=>drawMap(regions,sel.value);}drawMap(regions,'Jawa Tengah');}catch(e){mount.innerHTML=`<div class="map-fallback-041"><b>Peta belum dapat dimuat.</b><span>${esc(e.message)}</span><small>MUDA tetap menampilkan data wilayah dari server jika peta provider sedang tidak tersedia.</small></div>`;}}
-  function drawMap(regions,group){const allow=new Set((REGION_GROUPS[group]||REGION_GROUPS['Jawa Tengah']).map(String));const rows=regions.filter(r=>allow.has(r.name)||group==='Jawa Tengah');mapMarkers.forEach(m=>m.remove());mapMarkers=[];rows.forEach(r=>{if(!mapInstance||r.latitude==null||r.longitude==null)return;const pop=`<strong>${esc(r.name)}</strong><br>${fmt(r.article_count)} berita · ${fmt(r.video_count)} video<br><a href="/?q=${encodeURIComponent(r.query)}">Buka liputan wilayah →</a>`;const m=L.marker([r.latitude,r.longitude]).addTo(mapInstance).bindPopup(pop);mapMarkers.push(m);});$('#mapLegend041')&&($('#mapLegend041').innerHTML=`<span>${fmt(rows.length)} wilayah terpetakan</span><span>klik marker untuk membuka liputan</span>`);}
+    const mount=$('#mudaMap041');if(!mount)return;try{const regions=await get('/api/public/regions');const sel=$('#mapGroupSelect');if(sel){sel.innerHTML=`<option value="Jawa Tengah">Semua Jawa Tengah</option>`+Object.keys(REGION_GROUPS).filter(x=>x!=='Jawa Tengah').map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');sel.onchange=()=>drawMap(regions,sel.value);}drawMap(regions,'Jawa Tengah');}catch(e){mount.innerHTML=`<div class="map-fallback-041"><b>Data wilayah belum dapat dimuat.</b><span>${esc(e.message)}</span><small>MUDA tetap menjaga informasi wilayah tanpa menggambar peta eksternal yang dapat diblokir provider.</small></div>`;}}
+  function drawMap(regions,group){
+    const allow=new Set((REGION_GROUPS[group]||REGION_GROUPS['Jawa Tengah']).map(String));
+    const rows=regions.filter(r=>(group==='Jawa Tengah'||allow.has(r.name))&&r.latitude!=null&&r.longitude!=null);
+    const lats=rows.map(r=>Number(r.latitude)), lons=rows.map(r=>Number(r.longitude));
+    const minLat=Math.min(...lats,-8.9), maxLat=Math.max(...lats,-6.0), minLon=Math.min(...lons,108.4), maxLon=Math.max(...lons,111.9);
+    const xOf=lon=>6+((Number(lon)-minLon)/(maxLon-minLon||1))*88;
+    const yOf=lat=>94-((Number(lat)-minLat)/(maxLat-minLat||1))*82;
+    const pills=rows.map(r=>{const x=xOf(r.longitude),y=yOf(r.latitude),name=esc(r.name),query=encodeURIComponent(r.query||r.name);return `<button class="region-marker-042" style="left:${x}%;top:${y}%" title="${name} · ${fmt(r.article_count)} berita · ${fmt(r.video_count)} video" data-region-url="/?q=${query}"><span>${name}</span></button>`}).join('');
+    mountMarkup(mount, rows.length, group, pills);
+    $$('.region-marker-042',mount).forEach(b=>b.addEventListener('click',()=>{window.location.href=b.dataset.regionUrl||'/';}));
+    $('#mapLegend041')&&($('#mapLegend041').innerHTML=`<span>${fmt(rows.length)} wilayah terpetakan</span><span>koordinat wilayah dari data MUDA · klik wilayah untuk membuka liputan</span>`);
+  }
+  function mountMarkup(mount,count,group,pills){mount.innerHTML=`<div class="map-schematic-042" aria-label="Peta skematik Jawa Tengah"><div class="map-grid-lines"></div><div class="map-river"></div><div class="map-title-042"><b>JAWA TENGAH</b><span>${esc(group==='Jawa Tengah'?'Semua wilayah':group)}</span></div>${pills||''}<div class="map-note-042">${fmt(count)} wilayah · posisi skematik berdasarkan koordinat server</div></div>`;}
 
   function startVoice(){
     const status=$('#voiceStatus'),btn=$('#voiceCommandBtn'); if(!btn)return;
